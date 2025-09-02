@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints
+data/
+*.log
+ant
+Certificados Entrenamiento Viva Handling
+temp_split_pdfs
