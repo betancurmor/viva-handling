@@ -11,7 +11,8 @@ CONFIG = {
         "FILE_RELOJ_CHECADOR": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Faltas.csv",
         "FOLDER_RELOJ_CHECADOR": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Faltas",
         "FILE_COBERTURA": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Cobertura.xlsx",
-        "FOLDER_OUTPATH": r".\data\processed"
+        "FOLDER_OUTPATH": r".\data\processed",
+        "FOLDER_OUTPATH_DASHBOARD": r".\data\processed\dashboard_tables"
     },
     "SHEETS_NAMES": {
         "MAESTRO_HC" : 'BASE DE DATOS',
@@ -36,9 +37,9 @@ acentos_vocales = {
     'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'Á': 'A', 'É': 'E', 'Í': 'I', 'Ó': 'O', 'Ú': 'U', 'Ñ': 'N', 'ñ': 'n'
 }
 
-# Exportar df's
-ruta_prueba_xlsx = os.path.join(CONFIG['PATHS']['FOLDER_OUTPATH'], 'prueba.xlsx')
-ruta_prueba_csv = os.path.join(CONFIG["PATHS"]['FOLDER_OUTPATH'], 'prueba.csv')
+# # Exportar df's
+# ruta_prueba_xlsx = os.path.join(CONFIG['PATHS']['FOLDER_OUTPATH'], 'prueba.xlsx')
+# ruta_prueba_csv = os.path.join(CONFIG["PATHS"]['FOLDER_OUTPATH'], 'prueba.csv')
 
 
 def normalizar_acentos(series, vocales_acentos=acentos_vocales):
@@ -387,14 +388,14 @@ df_cobertura = df_cobertura.rename(columns={'cargo': 'puesto'})
 
 
 # ---- Exportar archivos
-ruta_csv_hechos = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH"], CONFIG["OUTPATHS"]['FACT_TABLE'])
-ruta_csv_hc = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH"], CONFIG["OUTPATHS"]['HC_TABLE'])
-ruta_csv_hc_bajas = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH"], CONFIG["OUTPATHS"]['HC_BAJAS_TABLE'])
-ruta_csv_puestos = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH"], CONFIG["OUTPATHS"]['PUESTOS_TABLE'])
-ruta_csv_cursos = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH"], CONFIG["OUTPATHS"]['CURSOS_TABLE'])
-ruta_csv_asistencia = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH"], CONFIG["OUTPATHS"]['ASISTENCIA_TABLE'])
-ruta_csv_ausentismo = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH"], CONFIG["OUTPATHS"]['AUSENTISMO_TABLE'])
-ruta_csv_cobertura = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH"], CONFIG["OUTPATHS"]['COBERTURA_TABLE'])
+ruta_csv_hechos = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH_DASHBOARD"], CONFIG["OUTPATHS"]['FACT_TABLE'])
+ruta_csv_hc = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH_DASHBOARD"], CONFIG["OUTPATHS"]['HC_TABLE'])
+ruta_csv_hc_bajas = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH_DASHBOARD"], CONFIG["OUTPATHS"]['HC_BAJAS_TABLE'])
+ruta_csv_puestos = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH_DASHBOARD"], CONFIG["OUTPATHS"]['PUESTOS_TABLE'])
+ruta_csv_cursos = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH_DASHBOARD"], CONFIG["OUTPATHS"]['CURSOS_TABLE'])
+ruta_csv_asistencia = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH_DASHBOARD"], CONFIG["OUTPATHS"]['ASISTENCIA_TABLE'])
+ruta_csv_ausentismo = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH_DASHBOARD"], CONFIG["OUTPATHS"]['AUSENTISMO_TABLE'])
+ruta_csv_cobertura = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH_DASHBOARD"], CONFIG["OUTPATHS"]['COBERTURA_TABLE'])
 
 #
 df_hechos.to_csv(ruta_csv_hechos, index=False, encoding='utf-8')

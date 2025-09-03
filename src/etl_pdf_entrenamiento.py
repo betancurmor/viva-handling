@@ -25,14 +25,16 @@ class Config:
         # Nombre de outfolder Constancias(pdf's)
         self.NOMBRE_FOLDER_CONSTANCIAS = 'Certificados Entrenamiento Viva Handling'
         self.NOMBRE_FOLDER_ONEDRIVE_CONSTANCIAS = '2.Constancias_actual'
+        self.NOMBRE_FOLDER_CONSTANCIAS_BAJAS = 'BAJAS'
 
         # Folders paths
         self.folder_data_processed = r'.\data\processed'
+        self.folder_data_processed_dashboard = r'.\data\processed\dashboard_tables'
         self.folder_data_raw = r'.\data\raw'
         self.folder_archivos_compartidos = r'C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\Certificados Entrenamiento Viva Handling - Certficados'
 
         # Files paths
-        self.file_hc_table = os.path.join(self.folder_data_processed, 'hc_table.csv')
+        self.file_hc_table = os.path.join(self.folder_data_processed_dashboard, 'hc_table.csv')
         self.file_lista_pdfs_nuevos_no_excluidos = os.path.join(self.folder_data_processed, self.nombre_archivo_lista_pdfs_nuevos_no_excluidos)
 
         # Outpaths
@@ -41,7 +43,9 @@ class Config:
         self.outpath_csv = os.path.join(self.folder_data_processed, self.nombre_archivo_csv)
         self.outpath_constancias_pdfs = os.path.join(self.folder_data_processed, self.NOMBRE_FOLDER_CONSTANCIAS)
         self.outpath_onedrive_constancias_pdfs = os.path.join(self.folder_archivos_compartidos, self.NOMBRE_FOLDER_ONEDRIVE_CONSTANCIAS)
-        
+        self.outpath_constancias_bajas_pdfs = os.path.join(self.outpath_constancias_pdfs, self.NOMBRE_FOLDER_CONSTANCIAS_BAJAS)
+        self.outpath_onedrive_constancias_bajas_pdfs = os.path.join(self.folder_archivos_compartidos, self.NOMBRE_FOLDER_ONEDRIVE_CONSTANCIAS)
+
         # Textos a buscar dentro de cada archivo para identificar el tipo de constancia
         self.nombres_archivos_sat = ['instructor sat', '2025-T', 'apoyo en tierra', 'sat.']
         self.nombres_archivos_avsec = ['AVSEC', 'AVSEC-2024', 'AVSEC-2025', 'AVSE ', 'seguridad de la aviación', 'seguridad de la aviacion']
@@ -100,9 +104,6 @@ class Config:
         self.ruta_registro_archivos_procesados = os.path.join(self.folder_data_processed, 'registro_archivos_procesados.txt')
         # --- Archivo lista de rutas pdfs(NUEVOS)
         self.ruta_nuevo_archivo_no_excluidos = os.path.join(self.folder_data_processed, 'lista_pdfs_nuevos_no_excluidos.txt')
-
-        # Asegurar que la carpeta de salida exista
-        os.makedirs(self.folder_data_processed, exist_ok=True)
         
     # Método privado
     def _create_output_folders(self):
@@ -111,6 +112,7 @@ class Config:
         os.makedirs(self.folder_data_processed, exist_ok=True)
         os.makedirs(self.folder_data_raw, exist_ok=True)
         os.makedirs(self.outpath_constancias_pdfs, exist_ok=True)
+        os.makedirs(self.outpath_constancias_bajas_pdfs, exist_ok=True)
         os.makedirs(os.path.dirname(self.outpath_processed_files_log), exist_ok=True)
         # Asegurar también para el archivo de lista de nuevos
         os.makedirs(os.path.dirname(self.file_lista_pdfs_nuevos_no_excluidos), exist_ok=True)
@@ -679,13 +681,13 @@ def cargar_data_hc(path_hc_table: str, vocales_acentos_map: dict):
     adicional con el nombre en formato "NOMBRE APELLIDO(P) APELLIDO(M)" para mejorar las coincidencias.
     """
     # Define antes por si hay error
-    df_hc = pd.DataFrame(columns=['#emp', 'nombre_completo', 'nombre', 'paterno', 'materno'])
+    df_hc = pd.DataFrame(columns=['#emp', 'nombre_completo', 'nombre', 'paterno', 'materno', 'estatus'])
 
     try:
         df_hc = pd.read_csv(path_hc_table, encoding='utf-8')
         df_hc = df_hc.apply(lambda col: normalizar_acentos(col, vocales_acentos_map)
                             if col.dtype == 'object' else col)
-        for col in ['nombre_completo', 'nombre', 'paterno', 'materno']:
+        for col in ['nombre_completo', 'nombre', 'paterno', 'materno', 'estatus']:
             if col in df_hc.columns and df_hc[col].dtype == 'object':
                 df_hc[col] = df_hc[col].astype('string').fillna('').str.strip().str.upper().apply(lambda x: normalizar_acentos(x, vocales_acentos_map))
             elif col not in df_hc.columns:
@@ -710,7 +712,7 @@ def cargar_data_hc(path_hc_table: str, vocales_acentos_map: dict):
         print(f"\nAdverencia: El archivo de empleados '{path_hc_table}' no fue encontrado. El proceso continuara sin datos de empleados para merge.\n")
     except Exception as e:
         print(f"\nAdvertencia: No se pudo cargar la tabla de empleados desde {path_hc_table}. Error: {e}\n")
-        df_hc = pd.DataFrame(columns=['#emp', 'nombre_completo'])
+        df_hc = pd.DataFrame(columns=['#emp', 'nombre_completo', 'estatus'])
     return df_hc
 
 def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.DataFrame, vocales_acentos_map: dict):
@@ -818,7 +820,7 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
     df_constancias['grupo'] = df_constancias['grupo'].str.replace(" -25", "-25", regex=False).str.strip()
 
     # Modificacion de nombre manual por error en constancia.
-    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('RAUL LUNA UIZAR', 'RAUL LUNA UIZAR', regex=False)
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('RAUL LUNA UIZAR', 'RAUL LUNA HUIZAR', regex=False)
 
     # --- DOBLE MERGE PARA MEJORAR COINCIDENCIAS DE NOMBRES
 
@@ -827,14 +829,14 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
 
     # #### MERGE 'Nombre'
     df_constancias_primer_merge = pd.merge(df_constancias,
-                                     df_hc[['nombre_completo_invertido', '#emp']],
+                                     df_hc[['nombre_completo_invertido', '#emp', 'estatus']],
                                      left_on=['nombre_completo'], # Columna de constancias (Nombre Apellido),
                                      right_on=['nombre_completo_invertido'], # Columna invertida de HC (Nombre Apellido)
                                      how='left',
                                      suffixes=('', '_hc_pass1')) # Sufijo para evitar colisiones si hubiera otras columnas '#emp'
     
     # Renombrar '#emp_hc_pass1' a '#emp' para el primer pase
-    df_constancias_primer_merge = df_constancias_primer_merge.rename(columns={'#emp_hc_pass1': '#emp'})
+    df_constancias_primer_merge = df_constancias_primer_merge.rename(columns={'#emp_hc_pass1': '#emp', 'estatus_hc_pass1': 'estatus'})
     # Eliminar la columna de merge usada de df_hc
     df_constancias_primer_merge = df_constancias_primer_merge.drop(columns=['nombre_completo_invertido'], errors='ignore')
 
@@ -855,7 +857,7 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         df_para_segundo_merge = registros_sin_coincidencia.copy() 
 
         df_constancias_segundo_merge = pd.merge(df_para_segundo_merge,
-        df_hc[['nombre_completo', '#emp']], # Usar la columna original 'nombre_completo' de 'df_hc'
+        df_hc[['nombre_completo', '#emp', 'estatus']], # Usar la columna original 'nombre_completo' de 'df_hc'
         left_on=['nombre_completo'], # Columna de Constancias (Apellidos-Nombre)
         right_on=['nombre_completo'], # Columna original de 'df_hc'
         how='left',
@@ -864,7 +866,9 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         # Ahora necesitamos consolidar los '#emp'
         # Donde '#emp_pass1' es nulo, usamos '#emp_pass2'
         df_constancias_segundo_merge['#emp'] = df_constancias_segundo_merge['#emp_pass1'].fillna(df_constancias_segundo_merge['#emp_pass2'])
+        # df_constancias_segundo_merge['estatus'] = df_constancias_segundo_merge['estatus_pass1'].fillna(df_constancias_segundo_merge['estatus_pass2'])
         df_constancias_segundo_merge = df_constancias_segundo_merge.drop(columns=['#emp_pass1', '#emp_pass2'])
+        # df_constancias_segundo_merge = df_constancias_segundo_merge.drop(columns=['#emp_pass1', '#emp_pass2', 'estatus_pass1', 'estatus_pass2'])
 
         # Los registros que se encuentren en el segundo pase tendrán un '#emp' aquí
         # Necesitamos unir estos resultados con los que ya se encontraron en el primer pase
@@ -881,6 +885,7 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         df_constancias_merged = registros_coincidentes # Si no hubo nada sin coincidencia en el primer pase, este es el resultado final
             
     df_constancias_merged['#emp'] = df_constancias_merged['#emp'].fillna(0).astype(int)
+    df_constancias_merged['estatus'] = df_constancias_merged['estatus'].fillna('DESCONOCIDO').astype('string') 
     column_emp = df_constancias_merged.pop('#emp')
     df_constancias_merged.insert(2, '#emp', column_emp)
     df_constancias_merged = df_constancias_merged.sort_values(['#emp', 'nombre_completo'])
@@ -921,19 +926,19 @@ def identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged: p
             print(f"Archivo: {row['nombre_archivo']} \nNombre empleado: {row['nombre_completo']}\n")
 
         # Outputs sin "#emp"
-        # output_excel_path = os.path.join(folder_data_processed, 'constancias_sin_emp.xlsx')
-        # output_csv_path = os.path.join(folder_data_processed, 'constancias_sin_emp.csv')
-        # try:
-        #     # Almacenar y exportar registros sin coincidencias '#emp'
-        #     constancias_sin_emp.to_excel(output_excel_path, index=False)
-        #     print(f"Registros sin '#emp' exportados a: {output_excel_path}")
-        # except Exception as e:
-        #     print(f"Error al exportar constancias sin '#emp' a Excel: {e}")
-        # try:
-        #     constancias_sin_emp.to_csv(output_csv_path, index=False, encoding='utf-8')
-        #     print(f"Registros sin '#emp' exportados a: {output_csv_path}")
-        # except Exception as e:
-        #     print(f"Error al exportar constancias sin '#emp' a CSV: {e}")
+        output_excel_path = os.path.join(folder_data_processed, 'datos_constancias_sin_emp.xlsx')
+        output_csv_path = os.path.join(folder_data_processed, 'datos_constancias_sin_emp.csv')
+        try:
+            # Almacenar y exportar registros sin coincidencias '#emp'
+            constancias_sin_emp.to_excel(output_excel_path, index=False)
+            print(f"Registros sin '#emp' exportados a: {output_excel_path}")
+        except Exception as e:
+            print(f"Error al exportar constancias sin '#emp' a Excel: {e}")
+        try:
+            constancias_sin_emp.to_csv(output_csv_path, index=False, encoding='utf-8')
+            print(f"Registros sin '#emp' exportados a: {output_csv_path}")
+        except Exception as e:
+            print(f"Error al exportar constancias sin '#emp' a CSV: {e}")
     else:
         print(f"\nTodas las constancias se asociaron correctamente\n")
 
@@ -943,9 +948,13 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_final: s
     Evita sobrescribir archivos existentes añadiendo un sufijo numerico.
     """
     print(f"Iniciando organizacion de archivos en {outpath_final}")
+    print(f"Destino para BAJAS: {config.outpath_constancias_bajas_pdfs}")
+    # print(f"Destino para BAJAS: {config.outpath_onedrive_constancias_bajas_pdfs}")
     pdfs_organizados = 0
     pdfs_no_organizados_error_copia = 0
-    # pdfs_sin_num_emp = 0
+    pdfs_sin_num_emp_count = 0 # Renombrada para evitar confusión con el contador de la función
+    pdfs_bajas_organizados = 0
+    pdfs_activos_organizados = 0
 
     if df_constancias_merged.empty:
         print("No hay constancias para organizar (DataFrame vacío).")
@@ -956,12 +965,26 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_final: s
         return
 
     # Contar los PDFs que no tienen un número de empleado asignado (== 0)
-    pdfs_sin_num_emp = (df_constancias_merged['#emp'] == 0).sum()
+    pdfs_sin_num_emp_count = (df_constancias_merged['#emp'] == 0).sum()
 
     for index, row in df_constancias_merged.iterrows():
         num_emp = str(row['#emp']) # Sera '0' si no hay coincidencia de '#emp'
         original_pdf_path = row['ruta_original']
         base_new_file_name_with_ext = row['nombre_archivo_nuevo'] # Este es el nombre base, sin sufijo aún
+        estatus_empleado = row['estatus'].upper()
+
+        # Determinar la carpeta destino basada en el estatus.
+        if estatus_empleado == 'BAJA' and num_emp == 0:
+            target_base_folder = config.outpath_constancias_bajas_pdfs
+            # target_base_folder = config.outpath_onedrive_constancias_bajas_pdfs
+            pdfs_bajas_organizados += 1
+        elif estatus_empleado == 'BAJA':
+            target_base_folder = config.outpath_constancias_bajas_pdfs
+            # target_base_folder = config.outpath_onedrive_constancias_bajas_pdfs
+            pdfs_bajas_organizados += 1
+        else:
+            target_base_folder = config.outpath_constancias_pdfs
+            # target_base_folder = config.outpath_onedrive_constancias_pdfs
 
         # Verificar si la 'ruta_original' existe antes de intentar crear la carpeta y copiar
         if not os.path.exists(original_pdf_path):
@@ -970,21 +993,11 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_final: s
             continue
 
         # Crear la carpeta de destino si no existe
-        folder_emp = os.path.join(outpath_final, num_emp)
+        folder_emp = os.path.join(target_base_folder, num_emp)
         os.makedirs(folder_emp, exist_ok=True) # exist_ok=True evita errores si ya existe
 
         # Logica para evitar sobrescritura y añadir sufijo numerico
-        final_file_name = base_new_file_name_with_ext
-        destino_pdf_path = os.path.join(folder_emp, final_file_name)
-
-        contador = 1
-        # Separar 'nombre_base' y extension para sufijo
-        name_without_ext, ext = os.path.splitext(base_new_file_name_with_ext)
-
-        while os.path.exists(destino_pdf_path):
-            contador += 1
-            final_file_name = f"{name_without_ext}_{contador}{ext}"
-            destino_pdf_path = os.path.join(folder_emp, final_file_name)
+        destino_pdf_path = os.path.join(folder_emp, base_new_file_name_with_ext)
 
         try:
             # Copiar el archivo. shutil.copy2 copia también metadatos como la fecha de modificación.
@@ -999,9 +1012,11 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_final: s
             print(f"\nERROR al copiar: '{os.path.join(original_pdf_path)}' a '{destino_pdf_path}': {e}\n")
             pdfs_no_organizados_error_copia += 1
 
-    print(f"\nOrganizacion de archivos terminada\n")
-    print(f"\nTotal de PDFs organizados en carpetas con numero de empleado: {pdfs_organizados}\n")
-    print(f"Total de archivos organizados en carpeta '0' (sin '#emp'): {pdfs_sin_num_emp}")
+    print(f"\nOrganización de archivos terminada.\n")
+    print(f"Total de PDFs organizados (incluye Activos, Bajas y sin #emp): {pdfs_organizados}")
+    print(f"  - PDFs de empleados ACTIVOS organizados: {pdfs_activos_organizados}")
+    print(f"  - PDFs de empleados BAJAS organizados: {pdfs_bajas_organizados}")
+    print(f"  - PDFs sin número de empleado (en carpeta '0'): {pdfs_sin_num_emp_count}")
     print(f"Total de archivos que fallaron al copiar (errores FileNotFoundError/Otros): {pdfs_no_organizados_error_copia}\n")
 
 def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_meses_map, vocales_acentos_map: dict):
@@ -1022,12 +1037,11 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
     # fecha_vigencia' (un año posterior a 'fecha normalizada')
     df_constancias_merged['fecha_vigencia'] = df_constancias_merged['fecha_asignada'] + pd.DateOffset(years=1)
     
-
     # Obtener la fecha actual (solo la fecha, sin la hora, para una comparación justa))
     fecha_hoy = pd.to_datetime(datetime.now().date())
 
     # condicional 'Vigente' , 'Vencido'
-    df_constancias_merged['status'] = np.where(
+    df_constancias_merged['estatus_vigencia'] = np.where(
         df_constancias_merged['fecha_vigencia'] < fecha_hoy,
         'Vencido',
         'Vigente'
@@ -1055,7 +1069,7 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
     df_constancias_merged['nombre_archivo_nuevo'] = df_constancias_merged.apply(lambda row: generate_new_filename(row, vocales_acentos_map), axis=1)
 
     # Organizar columnas e incluir 'nombre_archivo_nuevo'
-    df_final = df_constancias_merged[['nombre_archivo', 'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'curso_homologado','curso', 'instructor', 'grupo', 'fecha', 'fecha_asignada', 'fecha_vigencia', 'status', 'ruta_original']]
+    df_final = df_constancias_merged[['nombre_archivo', 'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'estatus', 'curso_homologado','curso', 'instructor', 'grupo', 'fecha', 'fecha_asignada', 'fecha_vigencia', 'estatus_vigencia', 'ruta_original']]
     df_final = df_final.reset_index(drop=True)
 
     return df_final
@@ -1199,7 +1213,7 @@ def main():
     df_final = normalizar_y_categorizar_fechas(df_constancias_merged, config.mapeo_meses, config.vocales_acentos)
 
     # 7. Organizar los archivos PDF en carpetas por empleado
-    organizar_archivos_pdf(df_final, config.outpath_onedrive_constancias_pdfs, config)
+    organizar_archivos_pdf(df_final, config.outpath_constancias_pdfs, config)
 
     # 8. Exportar resultados
     exportar_resultados(df_final, config.outpath_xlsx, config.outpath_csv)
