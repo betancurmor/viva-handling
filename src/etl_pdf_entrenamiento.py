@@ -44,7 +44,7 @@ class Config:
         self.outpath_constancias_pdfs = os.path.join(self.folder_data_processed, self.NOMBRE_FOLDER_CONSTANCIAS)
         self.outpath_onedrive_constancias_pdfs = os.path.join(self.folder_archivos_compartidos, self.NOMBRE_FOLDER_ONEDRIVE_CONSTANCIAS)
         self.outpath_constancias_bajas_pdfs = os.path.join(self.outpath_constancias_pdfs, self.NOMBRE_FOLDER_CONSTANCIAS_BAJAS)
-        self.outpath_onedrive_constancias_bajas_pdfs = os.path.join(self.folder_archivos_compartidos, self.NOMBRE_FOLDER_ONEDRIVE_CONSTANCIAS)
+        self.outpath_onedrive_constancias_bajas_pdfs = os.path.join(self.outpath_onedrive_constancias_pdfs, self.NOMBRE_FOLDER_CONSTANCIAS_BAJAS)
 
         # Textos a buscar dentro de cada archivo para identificar el tipo de constancia
         self.nombres_archivos_sat = ['instructor sat', '2025-T', 'apoyo en tierra', 'sat.']
@@ -78,7 +78,8 @@ class Config:
         # Script: 'generador_lista_no_excluidos.py'
         #  Rutas de carpetas fuente
         self.carpetas_fuente = [
-            # r"C:\Users\bryan.betancur\Projects\Viva-handling\data\raw\prueba",
+            # r"C:\Users\bryan.betancur\Projects\Viva-handling\data\raw\prueba"
+            # ,
             r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\Certificados Entrenamiento Viva Handling - Certficados\1.Constancias_agrupadas",
             r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\Capacitación SAT Pronomina MTY - 2025"
             ,
@@ -93,9 +94,7 @@ class Config:
 
         # Prefijos y sufijos a excluir (insensibles a mayúsculas/minúsculas)
         self.prefijos_excluidos = [
-            'bitcora', 'bitacora ', 'fori ', 'ojt ', '2024 rtar ', 'ef-', 'ef ', 'ex-', 'ex ',
-            'id ', 'id-', 'la ', 'la-', 'l.a.', 'l.a. ', 'l.a.-', 'ro-', 'ro ', 'sat-ro', 'pb',
-            'laf', '2025-r', 'dif ', 'dif-', 'td', 'green', '09 bajas', 'bajas', 'bitacora'
+            'bitcora', 'bitacora ', 'fori ', 'ojt ', '2024 rtar ', 'ef-', 'ef ', 'ex-', 'ex ', 'id ', 'id-', 'la ', 'la-', 'l.a.', 'l.a. ', 'l.a.-', 'ro-', 'ro ', 'sat-ro', 'pb', 'laf', '2025-r', 'dif ', 'dif-', 'td', 'green', '09 bajas', 'bajas', 'bitacora'
         ]
         self.sufijos_excluidos = ['cun', 'gc-25', 'gp-25', ' ro']
 
@@ -113,6 +112,7 @@ class Config:
         os.makedirs(self.folder_data_raw, exist_ok=True)
         os.makedirs(self.outpath_constancias_pdfs, exist_ok=True)
         os.makedirs(self.outpath_constancias_bajas_pdfs, exist_ok=True)
+        os.makedirs(self.outpath_onedrive_constancias_bajas_pdfs, exist_ok=True)
         os.makedirs(os.path.dirname(self.outpath_processed_files_log), exist_ok=True)
         # Asegurar también para el archivo de lista de nuevos
         os.makedirs(os.path.dirname(self.file_lista_pdfs_nuevos_no_excluidos), exist_ok=True)
@@ -141,34 +141,44 @@ def _guardar_registro_procesado_a_disco(config: Config):
 def cargar_rutas_archivos_desde_archivo(file_name):
     """
     Cargar una lista de rutas de archivos desde un archivo de texto,
-    donde cada línea contiene una ruta de archivo.
+    donde cada línea contiene una ruta de archivo y su tipo (standalone/grouped).
+    Retorna una lista de tuplas `(ruta, es_agrupado)`.
     """
-    loaded_paths = []
+    loaded_paths_with_flags = []
     try:
         if not os.path.exists(file_name):
             print(f"Advertencia: El archivo {file_name} no se encontro. No hay archivos para cargar.")
             return []  # Retorna una lista vacía si el archivo no existe
         with open(file_name, 'r', encoding='utf-8') as f:
             for line in f:
-                path = line.strip()  # Elimina espacios en blanco al inicio y al final  
-                if path:  # Verifica que la línea no esté vacía
-                    loaded_paths.append(path)
-        print(f"Se cargaron {len(loaded_paths)} rutas de archivos desde {file_name}.")
+                parts = line.strip().split('|') # Dividir la línea por '|'
+                if len(parts) == 2:
+                    path = parts[0]
+                    is_grouped = (parts[1].lower() == 'grouped')# Convertir el flag a booleano
+                    loaded_paths_with_flags.append((path, is_grouped))
+                elif len(parts) == 1 and parts[0]:
+                    print(f"Advertencia: Formato de línea '{line.strip()}' inesperado. Asumiendo standalone.")
+                    loaded_paths_with_flags.append((parts[0], False)) # Por defecto, asume que es standalone
+        print(f"Se cargaron {len(loaded_paths_with_flags)} rutas de archivos desde {file_name}.")
     except Exception as e:
         print(f"Error al cargar rutas de archivos desde {file_name}: {e}")
-    return loaded_paths
+    return loaded_paths_with_flags
         
-def extraer_datos_constancia(ruta_pdf, config: Config):
+def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str = None):
     """
-    Esta función recibe la ruta de un archivo PDF y extrae los datos relevantes de la constancia,
-    (SAT - SMS - AVSEC) utilizando los patrones definidos en la configuración.
-    Determina el tipo de constancia y luego aplica la extracción específica,
-    evitando retornos anticipados.
+    Esta función recibe la ruta de un archivo PDF y extrae los datos relevantes de la constancia.
+    `original_source_path` es la ruta del archivo fuente original (agrupado o standalone)
+    del cual se deriva esta `ruta_pdf` (que puede ser un archivo temporal).
     """
+
+    if original_source_path is None:
+        original_source_path = ruta_pdf # Si no se especifica, es el mismo.
+
     file_name = os.path.basename(ruta_pdf)
     datos = {
         "nombre_archivo" : file_name,
-        "ruta_original" : ruta_pdf,
+        "ruta_original" : ruta_pdf, # Esta es la ruta del archivo PDF que se está leyendo (puede ser temporal)
+        "original_source_path": original_source_path, # Esta es la ruta del archivo fuente original
         "Nombre" : "Nombre no encontrado",
         "Curso" : "Curso no encontrado",
         "Fecha" : "Fecha no encontrada",
@@ -260,8 +270,8 @@ def extraer_datos_constancia(ruta_pdf, config: Config):
 
     elif constancia_type == "SMS":
         datos['Curso'] = 'SMS'
-        # print(f"\nImprimiento texto extraido de la constancia: {file_name}\n")
-        # print(texto_extraido) # Pruebas
+        print(f"\nImprimiento texto extraido de la constancia 'SMS': {file_name}\n")
+        print(texto_extraido) # Pruebas
 
         # Nombre: Prioridad 1 - después de "Grants this recognition to:"
         patron_nombre_grants = r"Grants\s+this\s+recognition\s+to:\s*\n*(.*?)(?:\n|$)"
@@ -324,26 +334,79 @@ def extraer_datos_constancia(ruta_pdf, config: Config):
                 fecha_limpia = re.sub(r'\s+', ' ', coincidencia_fecha.group(1)).replace('del', 'de').strip()
                 datos['Fecha'] = fecha_limpia
 
+        #  # Grupo: robusto para varios formatos
+        # patron_grupo_n = r"(SMS[\s-]N-\d{3,4}-\d{2})" # Patrón para SMS-N-XXX-YY
+        # coincidencia_grupo = re.search(patron_grupo_n, texto_extraido)
+        # if coincidencia_grupo:
+        #     datos['Grupo'] = coincidencia_grupo.group(1).strip()
+        # else:
+        #     patron_grupo_sac = r"(SMS-SAC-\d{3,4}-\d{2})" # Patrón para SMS-SAC-XXX-YY
+        #     coincidencia_grupo_sac = re.search(patron_grupo_sac, texto_extraido)
+        #     if coincidencia_grupo_sac:
+        #         datos['Grupo'] = coincidencia_grupo_sac.group(1).strip()
+        #     else:
+        #         # NUEVA LÓGICA: Patrón para SMS-DDD-YY (e.g., SMS-658-25)
+        #         patron_grupo_sms_directo = r"(SMS-\d{3,4}-\d{2})"
+        #         coincidencia_grupo_sms_directo = re.search(patron_grupo_sms_directo, texto_extraido)
+        #         if coincidencia_grupo_sms_directo:
+        #             datos['Grupo'] = coincidencia_grupo_sms_directo.group(1).strip()
+        #         else:
+        #             # El patrón general existente (se usará si los anteriores no coinciden)
+        #             patron_grupo_general = r"(SMS\s*–\s*[A-Z]+\s*–\s*\d+\s*-\s*\d+|SMS[\s-]?N-\d+-\d+|SMS-SAC-\d+-\d+)"
+        #             coincidencia_grupo_general = re.search(patron_grupo_general, texto_extraido)
+        #             if coincidencia_grupo_general:
+        #                 datos['Grupo'] = coincidencia_grupo_general.group(1).strip()
+        #             else:
+        #                 # El patrón genérico "Grupo:" (último recurso)
+        #                 patron_sin_sms = r"Grupo:\s*(\d+-\d+|[A-Z]+-[A-Z]+-[A-Z]-\d+-\d+)"
+        #                 coincidencia_sin_sms = re.search(patron_sin_sms, texto_extraido)
+        #                 if coincidencia_sin_sms:
+        #                     datos['Grupo'] = coincidencia_sin_sms.group(1).strip()                
+
         # Grupo: robusto para varios formatos
-        patron_grupo = r"(SMS[\s-]N-\d{3,4}-\d{2})"
-        coincidencia_grupo = re.search(patron_grupo, texto_extraido)
+        # Priority 1: SMS-N-XXX-YY
+        patron_grupo_n = r"(SMS[\s-]N-\d{3,4}-\d{2})"
+        coincidencia_grupo = re.search(patron_grupo_n, texto_extraido)
         if coincidencia_grupo:
             datos['Grupo'] = coincidencia_grupo.group(1).strip()
         else:
-            patron_grupo_alt = r"(SMS-SAC-\d{3,4}-\d{2})"
-            coincidencia_grupo_alt = re.search(patron_grupo_alt, texto_extraido)
-            if coincidencia_grupo_alt:
-                datos['Grupo'] = coincidencia_grupo_alt.group(1).strip()
+            # Priority 2: SMS-SAC-XXX-YY
+            patron_grupo_sac = r"(SMS-SAC-\d{3,4}-\d{2})"
+            coincidencia_grupo_sac = re.search(patron_grupo_sac, texto_extraido)
+            if coincidencia_grupo_sac:
+                datos['Grupo'] = coincidencia_grupo_sac.group(1).strip()
             else:
-                patron_grupo = r"(SMS\s*–\s*[A-Z]+\s*–\s*\d+\s*-\s*\d+|SMS[\s-]?N-\d+-\d+|SMS-SAC-\d+-\d+)"
-                coincidencia_grupo = re.search(patron_grupo, texto_extraido)
-                if coincidencia_grupo:
-                    datos['Grupo'] = coincidencia_grupo.group(1).strip()
+                # Priority 3: SMS-DDD-YY (e.g., SMS-658-25)
+                patron_grupo_sms_directo = r"(SMS-\d{3,4}-\d{2})"
+                coincidencia_grupo_sms_directo = re.search(patron_grupo_sms_directo, texto_extraido)
+                if coincidencia_grupo_sms_directo:
+                    datos['Grupo'] = coincidencia_grupo_sms_directo.group(1).strip()
                 else:
-                    patron_sin_sms = r"Grupo:\s*(\d+-\d+|[A-Z]+-[A-Z]+-[A-Z]-\d+-\d+)"
-                    coincidencia_sin_sms = re.search(patron_sin_sms, texto_extraido)
-                    if coincidencia_sin_sms:
-                        datos['Grupo'] = coincidencia_sin_sms.group(1).strip()
+                    # Priority 4: More general SMS patterns
+                    patron_grupo_general = r"(SMS\s*–\s*[A-Z]+\s*–\s*\d+\s*-\s*\d+|SMS[\s-]?N-\d+-\d+|SMS-SAC-\d+-\d+)"
+                    coincidencia_grupo_general = re.search(patron_grupo_general, texto_extraido)
+                    if coincidencia_grupo_general:
+                        datos['Grupo'] = coincidencia_grupo_general.group(1).strip()
+                    else:
+                        # Priority 5: Generic "Grupo:" pattern (last SMS-specific resort)
+                        patron_sin_sms = r"Grupo:\s*(\d+-\d+|[A-Z]+-[A-Z]+-[A-Z]-\d+-\d+)"
+                        coincidencia_sin_sms = re.search(patron_sin_sms, texto_extraido)
+                        if coincidencia_sin_sms:
+                            datos['Grupo'] = coincidencia_sin_sms.group(1).strip()
+                        else:
+                            # --- NUEVA LÓGICA: FALLBACK PARA GRUPOS AVSEC DENTRO DE CERTIFICADOS SMS ---
+                            # Intentar encontrar un patrón de grupo AVSEC si todos los SMS fallaron.
+                            # Priority 6 (dentro del bloque SMS): Grupo AVSEC con prefijo "Grupo:"
+                            patron_grupo_avsec_fallback_1 = r"Grupo:\s*((?:VH-)?(?:PRO-)?AVSEC-\d{3,4}-\d{2}\b)"
+                            coincidencia_avsec_fallback = re.search(patron_grupo_avsec_fallback_1, texto_extraido, re.IGNORECASE)
+                            if coincidencia_avsec_fallback:
+                                datos['Grupo'] = coincidencia_avsec_fallback.group(1).strip()
+                            else:
+                                # Priority 7 (dentro del bloque SMS): Grupo AVSEC en cualquier parte del texto (sin prefijo explícito "Grupo:")
+                                patron_grupo_avsec_fallback_2 = r"((?:VH-)?(?:PRO-)?AVSEC-\d{3,4}-\d{2}\b)"
+                                coincidencia_avsec_fallback = re.search(patron_grupo_avsec_fallback_2, texto_extraido, re.IGNORECASE)
+                                if coincidencia_avsec_fallback:
+                                    datos['Grupo'] = coincidencia_avsec_fallback.group(1).strip()
 
         # Instructor: nombre antes de "Instructor"
         patron_instructor = r"([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+)\s*\n*Instructor"
@@ -359,6 +422,8 @@ def extraer_datos_constancia(ruta_pdf, config: Config):
 
     elif constancia_type == "AVSEC":
         datos['Curso'] = 'AVSEC'
+        # print(f"\nImprimiento texto extraido de la constancia 'AVSEC': {file_name}\n")
+        # print(texto_extraido) # Pruebas
 
         # Nombre Colaborador / Empleado - PATRÓN ROBUSTECIDO
         patron_nombre_avsec = r"^(.*?)\s+(?:Impartido en (?:la )?Ciudad de|Por haber concluido satisfactoriamente el curso|CONTENIDO TEMATICO|Curso:|Folio:|Viva Aerobus|Duración de:)"
@@ -395,11 +460,10 @@ def extraer_datos_constancia(ruta_pdf, config: Config):
         # Grupo / Curso / 2.0
         patron_grupo_avsec = r"(?:Grupo:\s*|Curso:\s*\d{1,2}-\d{1,2}\s*\n*|\b)((?:PRO-)?AVSEC-\d{3,4}-\d{2}\b)"
         coincidencia_grupo = re.search(patron_grupo_avsec, texto_extraido, re.DOTALL | re.IGNORECASE)
+
         if coincidencia_grupo:
             datos['Grupo'] = coincidencia_grupo.group(1).strip()
 
-    # Si llega aquí y el tipo es UNKNOWN, o si los patrones no encontraron nada,
-    # el diccionario 'datos' contendrá los valores por defecto "No encontrado".
     return datos 
 
 def procesar_archivos_constancias(lista_rutas_archivos, config: Config):
@@ -487,11 +551,23 @@ def homologar_curso(curso_raw: str):
 
     # --- Lógica para determinar el 'curso homologado' ---
     # Prioridad: SAT -> SMS -> AVSEC
+    # Añadimos 'P.P: Prescreening of passengers'
+    # Añadimos 'Cabin Search', solo es para personal Administrativo
+
+    # Patrones para curso 'Cabin Search'
+    if 'cabin search' in curso_lower:
+        return 'Cabin Search'
+
+    # Patrones para cursos P.P
+    if 'prescreening of passengers (trafico)' in curso_lower:
+        return 'P.P(Trafico)'
 
     # Patrones para cursos SAT
-    if 'servicio de apoyo en tierra' in curso_lower:
+    if 'servicio de apoyo en tierra' in curso_lower or 'servicios de apoyo en tierra' in curso_lower:
         if 'rampa' in curso_lower or 'agente de rampa' in curso_lower:
             return 'SAT(Rampa)'
+        if 'operador autoprestacion' in curso_lower:
+            return 'SAT(Operador Autoprestacion)'    
         if 'operador' in curso_lower:
             return 'SAT(Operador)'
         if 'asesor de servicio al cliente' in curso_lower or 'asesor de servicio a cliente' in curso_lower or 'asc' in curso_lower:
@@ -505,6 +581,18 @@ def homologar_curso(curso_raw: str):
     # Patrones para SMS
     if 'safety management system' in curso_lower or 'sms' in curso_lower:
         return 'SMS'
+    
+    # Patron para cursos SAT
+    # No lo incluye explicitamente
+    if 'personal perteneciente' in curso_lower or 'personal permaneciente' in curso_lower:
+        if 'rampa autoprestacion' in curso_lower:
+            return 'SAT(Rampa Autoprestacion)'
+        if 'rampa' in curso_lower:
+            return 'SAT(Rampa)'
+        if 'trafico' in curso_lower:
+            return 'SAT(Trafico)'
+        if 'csa autoprestacion' in curso_lower:
+            return 'SAT(CSA Autoprestacion)'
     
     return 'OTRO' # Categoría para cursos que no encajan en ninguna de las anteriores
     
@@ -776,7 +864,8 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         'NIÑO PLASCENCIA ALFREDO.pdf',
         'CRUZ SANTIAGO SARA.pdf',
         'OP 2024 PORTOS GAMEZ HECTOR ABRAHAM (1) (1).pdf',
-        'OP 2024 PORTOS GAMEZ HECTOR ABRAHAM (1).pdf'
+        'OP 2024 PORTOS GAMEZ HECTOR ABRAHAM (1).pdf',
+        'OP-0011-25.pdf'
     ]
     df_filtrado = df_constancias[~df_constancias['nombre_archivo'].isin(archivos_expecificos_a_excluir)]
     eliminados_por_nombres_especificos = recuento_filas_actuales - len(df_filtrado)
@@ -866,9 +955,10 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         # Ahora necesitamos consolidar los '#emp'
         # Donde '#emp_pass1' es nulo, usamos '#emp_pass2'
         df_constancias_segundo_merge['#emp'] = df_constancias_segundo_merge['#emp_pass1'].fillna(df_constancias_segundo_merge['#emp_pass2'])
-        # df_constancias_segundo_merge['estatus'] = df_constancias_segundo_merge['estatus_pass1'].fillna(df_constancias_segundo_merge['estatus_pass2'])
-        df_constancias_segundo_merge = df_constancias_segundo_merge.drop(columns=['#emp_pass1', '#emp_pass2'])
-        # df_constancias_segundo_merge = df_constancias_segundo_merge.drop(columns=['#emp_pass1', '#emp_pass2', 'estatus_pass1', 'estatus_pass2'])
+        df_constancias_segundo_merge['estatus'] = df_constancias_segundo_merge['estatus_pass1'].fillna(df_constancias_segundo_merge['estatus_pass2'])
+        
+        # Eliminar las columnas temporales de los pases
+        df_constancias_segundo_merge = df_constancias_segundo_merge.drop(columns=['#emp_pass1', '#emp_pass2', 'estatus_pass1', 'estatus_pass2'])
 
         # Los registros que se encuentren en el segundo pase tendrán un '#emp' aquí
         # Necesitamos unir estos resultados con los que ya se encontraron en el primer pase
@@ -942,81 +1032,83 @@ def identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged: p
     else:
         print(f"\nTodas las constancias se asociaron correctamente\n")
 
-def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_final: str, config: Config):
+def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_base_activos: str, config: Config):
     """
-    Organiza los archivos PDF copiandolos a carpetas individuales por numero de empleado(#emp) y renombrandolos segun la columna 'nombre_archivo_nuevo'.
-    Evita sobrescribir archivos existentes añadiendo un sufijo numerico.
+    Organiza los archivos PDF copiándolos a carpetas individuales por número de empleado(#emp).
+    Los empleados 'BAJA' van a una subcarpeta 'BAJAS'.
+    Sobrescribe archivos existentes (no crea duplicados con sufijos).
     """
-    print(f"Iniciando organizacion de archivos en {outpath_final}")
+    print(f"Iniciando organización de archivos. Destino base para ACTIVOS: {outpath_base_activos}")
     print(f"Destino para BAJAS: {config.outpath_constancias_bajas_pdfs}")
-    # print(f"Destino para BAJAS: {config.outpath_onedrive_constancias_bajas_pdfs}")
+
     pdfs_organizados = 0
     pdfs_no_organizados_error_copia = 0
-    pdfs_sin_num_emp_count = 0 # Renombrada para evitar confusión con el contador de la función
-    pdfs_bajas_organizados = 0
-    pdfs_activos_organizados = 0
+    pdfs_sin_num_emp_count = 0 
+    pdfs_bajas_organizados = 0 
+    pdfs_activos_organizados = 0 
 
     if df_constancias_merged.empty:
         print("No hay constancias para organizar (DataFrame vacío).")
-        print(f"\nOrganización de archivos terminada.\n")
-        print(f"Total de PDFs organizados en carpetas con numero de empleado: {pdfs_organizados}")
-        print(f"Total de archivos NO organizados (sin '#emp'): 0 (DataFrame estaba vacío)")
-        print(f"Total de archivos que fallaron al copiar (errores FileNotFoundError/Otros): 0\n")
+        print("\nOrganización de archivos terminada.\n")
+        print("Total de PDFs organizados: 0")
+        print("Total de archivos que fallaron al copiar: 0\n")
         return
 
     # Contar los PDFs que no tienen un número de empleado asignado (== 0)
-    pdfs_sin_num_emp_count = (df_constancias_merged['#emp'] == 0).sum()
+    # y que no tienen estatus 'BAJA' para el reporte de carpeta '0'
+    pdfs_sin_num_emp_count = len(df_constancias_merged[(df_constancias_merged['#emp'] == 0) & (df_constancias_merged['estatus'].str.upper() != 'BAJA')])
 
     for index, row in df_constancias_merged.iterrows():
         num_emp = str(row['#emp']) # Sera '0' si no hay coincidencia de '#emp'
-        original_pdf_path = row['ruta_original']
+        original_pdf_to_copy_path = row['ruta_original'] # Esta es la ruta del archivo a COPIAR (temporal o standalone)
         base_new_file_name_with_ext = row['nombre_archivo_nuevo'] # Este es el nombre base, sin sufijo aún
         estatus_empleado = row['estatus'].upper()
 
-        # Determinar la carpeta destino basada en el estatus.
-        if estatus_empleado == 'BAJA' and num_emp == 0:
+        # --- Ruta para el registro de archivos procesados (siempre el archivo fuente original) ---
+        original_source_file_for_log = row['original_source_path']
+
+        # Determinar la carpeta de destino basada en el estatus
+        if estatus_empleado == 'BAJA':
             target_base_folder = config.outpath_constancias_bajas_pdfs
-            # target_base_folder = config.outpath_onedrive_constancias_bajas_pdfs
+            # Si es BAJA, incrementa este contador, independientemente de si tiene #emp=0
             pdfs_bajas_organizados += 1
-        elif estatus_empleado == 'BAJA':
-            target_base_folder = config.outpath_constancias_bajas_pdfs
-            # target_base_folder = config.outpath_onedrive_constancias_bajas_pdfs
-            pdfs_bajas_organizados += 1
-        else:
-            target_base_folder = config.outpath_constancias_pdfs
-            # target_base_folder = config.outpath_onedrive_constancias_pdfs
+        else: # Incluye 'ALTA' y 'DESCONOCIDO'. Los '#emp == 0' también caen aquí, a menos que sean 'BAJA'.
+            target_base_folder = outpath_base_activos
+            if num_emp != '0': # Solo contar activos si tienen un #emp válido
+                pdfs_activos_organizados += 1
+            # else: pdfs_sin_num_emp_count ya se cuenta arriba de forma más precisa.
 
         # Verificar si la 'ruta_original' existe antes de intentar crear la carpeta y copiar
-        if not os.path.exists(original_pdf_path):
-            print(f"ADVERTENCIA: Archivo de origen no encontrado en '{original_pdf_path}'. Se salta.")
+        if not os.path.exists(original_pdf_to_copy_path):
+            print(f"ADVERTENCIA: Archivo de origen no encontrado en '{original_pdf_to_copy_path}'. Se salta.")
             pdfs_no_organizados_error_copia += 1
             continue
 
-        # Crear la carpeta de destino si no existe
+        # Crear la carpeta de destino (ej. 'Certificados Entrenamiento Viva Handling/12345' o 'BAJAS/54321')    
         folder_emp = os.path.join(target_base_folder, num_emp)
-        os.makedirs(folder_emp, exist_ok=True) # exist_ok=True evita errores si ya existe
+        os.makedirs(folder_emp, exist_ok=True) 
 
-        # Logica para evitar sobrescritura y añadir sufijo numerico
+        # El nombre del archivo final es simplemente el 'nombre_archivo_nuevo'
         destino_pdf_path = os.path.join(folder_emp, base_new_file_name_with_ext)
 
         try:
             # Copiar el archivo. shutil.copy2 copia también metadatos como la fecha de modificación.
-            shutil.copy2(original_pdf_path, destino_pdf_path)
+            shutil.copy2(original_pdf_to_copy_path, destino_pdf_path)
             pdfs_organizados += 1
-            # IMPORTANTE: Añadir PATH ORIGINAL al archivo "registro de archivos procesados".
-            _añadir_set_procesado_en_memoria(original_pdf_path, config)
+            # IMPORTANTE: Añadir PATH ORIGINAL del documento FUENTE (agrupado o standalone) al log.
+            _añadir_set_procesado_en_memoria(original_source_file_for_log, config)
         except FileNotFoundError:
-            print(f"\nERROR: Archivo no encontrado en origen para copiar: '{original_pdf_path}'\n")
+            print(f"\nERROR: Archivo no encontrado en origen para copiar: '{original_pdf_to_copy_path}'\n")
             pdfs_no_organizados_error_copia += 1
         except Exception as e:
-            print(f"\nERROR al copiar: '{os.path.join(original_pdf_path)}' a '{destino_pdf_path}': {e}\n")
+            print(f"\nERROR al copiar: '{original_pdf_to_copy_path}' a '{destino_pdf_path}': {e}\n")
             pdfs_no_organizados_error_copia += 1
 
     print(f"\nOrganización de archivos terminada.\n")
     print(f"Total de PDFs organizados (incluye Activos, Bajas y sin #emp): {pdfs_organizados}")
     print(f"  - PDFs de empleados ACTIVOS organizados: {pdfs_activos_organizados}")
     print(f"  - PDFs de empleados BAJAS organizados: {pdfs_bajas_organizados}")
-    print(f"  - PDFs sin número de empleado (en carpeta '0'): {pdfs_sin_num_emp_count}")
+    print(f"  - PDFs sin número de empleado (en carpeta '0' de Activos): {pdfs_sin_num_emp_count}")
     print(f"Total de archivos que fallaron al copiar (errores FileNotFoundError/Otros): {pdfs_no_organizados_error_copia}\n")
 
 def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_meses_map, vocales_acentos_map: dict):
@@ -1069,7 +1161,7 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
     df_constancias_merged['nombre_archivo_nuevo'] = df_constancias_merged.apply(lambda row: generate_new_filename(row, vocales_acentos_map), axis=1)
 
     # Organizar columnas e incluir 'nombre_archivo_nuevo'
-    df_final = df_constancias_merged[['nombre_archivo', 'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'estatus', 'curso_homologado','curso', 'instructor', 'grupo', 'fecha', 'fecha_asignada', 'fecha_vigencia', 'estatus_vigencia', 'ruta_original']]
+    df_final = df_constancias_merged[['nombre_archivo', 'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'estatus', 'curso_homologado','curso', 'instructor', 'grupo', 'fecha', 'fecha_asignada', 'fecha_vigencia', 'estatus_vigencia', 'ruta_original', 'original_source_path']]
     df_final = df_final.reset_index(drop=True)
 
     return df_final
@@ -1167,44 +1259,102 @@ def exportar_resultados(df_final: pd.DataFrame, outpath_xlsx, outpath_csv):
     except Exception as e:
         print(f"\nError al exportar a csv: {e}\n")
 
+def _cargar_set_registros_procesados(config: Config):
+    """Carga el log de archivos procesados en un conjunto para busquedas eficientes."""
+    processed_paths = set()
+    if os.path.exists(config.outpath_processed_files_log):
+        try:
+            with open(config.outpath_processed_files_log, 'r', encoding='utf-8') as f:
+                for line in f:
+                    path = line.strip()
+                    if path:
+                        processed_paths.add(path)
+            print(f"Cargadas {len(processed_paths)} rutas iniciales en memoria desde: '{config.outpath_processed_files_log}'")
+        except Exception as e:
+            print(f"Advertencia: No se pudo cargar el log de archivos procesados inicial desde '{config.outpath_processed_files_log}'. Error: {e}")
+    else:
+        print(f"No se encontró el log de archivos inicial en '{config.outpath_processed_files_log}'. Se inicia con un set vacío.")
+    config.processed_files_set_in_memory = processed_paths # Asegurar que el set en config se actualice
+
 def main():
     """
     Funcion principal que orquesta el proceso de ETL de las constancias.
     """
+
     config = Config()
+    _cargar_set_registros_procesados(config) # <--- LLAMADA A LA FUNCIÓN GLOBAL AQUÍ
 
-    def _cargar_set_registros_procesados(config: Config):
-        if os.path.exists(config.outpath_processed_files_log):
+    # Limpiar la carpeta temporal al inicio de la ejecución de etl_pdf_entrenamiento.py
+    if os.path.exists(config.temp_split_pdfs_folder):
+        try:
+            shutil.rmtree(config.temp_split_pdfs_folder)
+            print(f"INFO: Carpeta temporal de PDFs divididos '{config.temp_split_pdfs_folder}' limpiada.")
+        except Exception as e:
+            print(f"ADVERTENCIA: No se pudo limpiar la carpeta temporal '{config.temp_split_pdfs_folder}' al inicio. Error: {e}")
+    os.makedirs(config.temp_split_pdfs_folder, exist_ok=True) # Asegurarse de que exista después de limpiar o si no existía
+
+    # 1. Cargar la lista de archivos (path, is_grouped_flag) desde el generador
+    list_of_source_files_with_flags = cargar_rutas_archivos_desde_archivo(config.file_lista_pdfs_nuevos_no_excluidos)
+
+    all_extracted_data = [] # Recopila datos de todos los PDFs procesados (standalone o páginas divididas)
+
+    print(f"\nIniciando procesamiento de {len(list_of_source_files_with_flags)} archivos fuente (incluyendo agrupados)...\n")
+    total_files_processed_for_data_extraction = 0 # Cuenta los archivos fuente procesados (originales, no las páginas)
+    total_grouped_pdfs_split = 0
+    total_extracted_certificates = 0 # Cuenta las constancias individuales (páginas) extraídas
+
+    for source_pdf_path, is_grouped in list_of_source_files_with_flags:
+        if not os.path.exists(source_pdf_path):
+            print(f"Advertencia: Archivo fuente no encontrado '{source_pdf_path}'. Saltando.")
+            continue
+
+        if is_grouped:
+            print(f"Procesando PDF agrupado: {os.path.basename(source_pdf_path)}. Dividiendo...")
+            temp_split_certs_paths = dividir_pdf_constancia_agrupado(source_pdf_path, config)
+            total_grouped_pdfs_split += 1
+            if temp_split_certs_paths:
+                print(f"Extraídas {len(temp_split_certs_paths)} páginas de '{os.path.basename(source_pdf_path)}'.")
+                for temp_path in temp_split_certs_paths:
+                    try:
+                        # Pasa el `source_pdf_path` original al extraer datos de las páginas temporales
+                        extracted_datum = extraer_datos_constancia(temp_path, config, original_source_path=source_pdf_path)
+                        all_extracted_data.append(extracted_datum)
+                        total_extracted_certificates += 1
+                    except Exception as e:
+                        print(f"Error al extraer datos de la página temporal '{os.path.basename(temp_path)}': {e}")
+            else:
+                print(f"ADVERTENCIA: No se pudieron extraer constancias válidas de '{os.os.path.basename(source_pdf_path)}'.")
+        else: # PDF Standalone
+            print(f"Procesando PDF standalone: {os.path.basename(source_pdf_path)}")
             try:
-                with open(config.outpath_processed_files_log, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        path = line.strip()
-                        if path:
-                            config.processed_files_set_in_memory.add(path)
-                print(f"Cargadas {len(config.processed_files_set_in_memory)} rutas iniciales en memoria desde: '{config.outpath_processed_files_log}'")
+                # Para archivos standalone, el `original_source_path` es el mismo `source_pdf_path`
+                extracted_datum = extraer_datos_constancia(source_pdf_path, config, original_source_path=source_pdf_path)
+                all_extracted_data.append(extracted_datum)
+                total_extracted_certificates += 1
             except Exception as e:
-                print(f"Advertencia: No se pudo cargar el log de archivos procesados inicial desde '{config.outpath_processed_files_log}'. Error: {e}")
-        else:
-            print(f"No se encontró el log de archivos inicial en '{config.outpath_processed_files_log}'. Se inicia con un set vacío.")
+                print(f"Error al extraer datos de '{os.os.path.basename(source_pdf_path)}': {e}")
+        
+        total_files_processed_for_data_extraction += 1
 
-    _cargar_set_registros_procesados(config)
-
-    # 1. Cargar la lista de archivos excluidos generada por el script no diario
-    lista_archivos_para_procesar = cargar_rutas_archivos_desde_archivo(config.file_lista_pdfs_nuevos_no_excluidos)
-
-    # 2. Procesar los archivos de constancias para extraer datos
-    # Pasar la config a extraer_datos_constancia a través de procesar_archivos_constancias
-    datos_conjunto_excluidos = procesar_archivos_constancias(lista_archivos_para_procesar, config)
+    print(f"\nProcesamiento de archivos fuente completado. Total de archivos fuente procesados: {total_files_processed_for_data_extraction}.")
+    print(f"  - PDFs agrupados divididos: {total_grouped_pdfs_split}")
+    print(f"  - Total de constancias individuales extraídas: {total_extracted_certificates}\n")
 
     # 3. Cargar datos de empleados (HC)
     df_hc = cargar_data_hc(config.file_hc_table, config.vocales_acentos)
 
     # 4. Convertir datos extraídos a DataFrame, limpiar y fusionar con HC
-    df_constancias_merged = procesar_y_mergear_constancias(datos_conjunto_excluidos, df_hc, config.vocales_acentos)
+    df_constancias_merged = procesar_y_mergear_constancias(all_extracted_data, df_hc, config.vocales_acentos)
 
     if df_constancias_merged.empty:
         print("El DataFrame resultante está vacío. Terminando el proceso.")
         return
+
+    # Asegurar que 'original_source_path' sea de tipo string antes de pasarlo a otras funciones
+    if 'original_source_path' in df_constancias_merged.columns:
+        df_constancias_merged['original_source_path'] = df_constancias_merged['original_source_path'].astype('string').fillna('')
+    else:
+        df_constancias_merged['original_source_path'] = '' # Fallback, no debería ocurrir si extraer_datos_constancia funciona bien
 
     # 5. Identificar y reportar constancias sin número de empleado
     identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged, config.folder_data_processed)
@@ -1220,6 +1370,14 @@ def main():
 
     # Guardar el set único de archivos procesados a disco
     _guardar_registro_procesado_a_disco(config)
+
+    # Limpiar la carpeta temporal al final de la ejecución de etl_pdf_entrenamiento.py
+    if os.path.exists(config.temp_split_pdfs_folder):
+        try:
+            shutil.rmtree(config.temp_split_pdfs_folder)
+            print(f"INFO: Carpeta temporal de PDFs divididos '{config.temp_split_pdfs_folder}' eliminada.")
+        except Exception as e:
+            print(f"ADVERTENCIA: No se pudo eliminar la carpeta temporal '{config.temp_split_pdfs_folder}' al final. Error: {e}")
 
 if __name__ == "__main__":
     main()

@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from etl_pdf_entrenamiento import Config, dividir_pdf_constancia_agrupado, normalizar_acentos, fitz
+from etl_pdf_entrenamiento import Config, fitz
 
 # --- 1. FUNCIÓN CARGAR SET REGISTROS(log) PROCESADOS ---
 def _cargar_set_registros_procesados(log_file_path):
@@ -26,25 +26,17 @@ def generador_lista_archivos_no_excluidos(config: Config):
     Identifica los archivos PDF que no fueron excluidos, los divide si son agrupados,
     y guarda esta lista de "archivos nuevos no excluidos" en un archivo de texto.
     """
-    new_non_excluded_file_paths = []
+    new_non_excluded_file_paths_for_export = []
     total_carpetas_saltadas = 0
     total_archivos_encontrados = 0
     total_pdfs_excluidos_por_regla = 0
     total_pdfs_excluidos_por_fecha = 0
     total_pdfs_ya_procesados = 0
-    total_pdfs_agrupados_divididos = 0 # Contador para el reporte
 
     print("\n[SCRIPT NO DIARIO] Iniciando búsqueda de archivos NO excluidos...\n")
 
     # Cargar el log de archivos ya procesados una sola vez al inicio
     set_archivos_procesados = _cargar_set_registros_procesados(config.ruta_registro_archivos_procesados)
-
-    # Limpiar la carpeta temporal al inicio de cada ejecución
-    if os.path.exists(config.temp_split_pdfs_folder):
-        for f in os.listdir(config.temp_split_pdfs_folder):
-            os.remove(os.path.join(config.temp_split_pdfs_folder, f))
-        print(f"INFO: Carpeta temporal de PDFs divididos '{config.temp_split_pdfs_folder}' limpiada.")
-    os.makedirs(config.temp_split_pdfs_folder, exist_ok=True) # Asegurarse de que exista
 
     for source_folder in config.carpetas_fuente:
         if not os.path.exists(source_folder):
@@ -135,29 +127,21 @@ def generador_lista_archivos_no_excluidos(config: Config):
                 if full_pdf_path in set_archivos_procesados:
                     total_pdfs_ya_procesados += 1
                     continue # Archivo ya procesado, no es NUEVO, saltar
+                
+                # Si llega aqui, es un archivo NUEVO NO EXCLUIDO
+                is_grouped = False
 
                 try:
                     doc_check = fitz.open(full_pdf_path)
                     # Heurística para detectar si es un PDF agrupado (ej., > 1 página y no marcado como excluido)
                     if doc_check.page_count > 1:
-                        print(f"INFO: Posible PDF agrupado detectado: '{os.path.basename(full_pdf_path)}'. Intentando dividir...")
-                        temp_split_certs = dividir_pdf_constancia_agrupado(full_pdf_path, config)
-                        if temp_split_certs:
-                            new_non_excluded_file_paths.extend(temp_split_certs)
-                            total_pdfs_agrupados_divididos += 1
-                            print(f"INFO: {len(temp_split_certs)} constancias individuales extraídas de '{os.path.basename(full_pdf_path)}'.")
-                            doc_check.close()
-                            continue # No procesar el PDF agrupado original, solo sus partes
-                        else:
-                            print(f"ADVERTENCIA: No se encontraron constancias válidas al dividir '{os.path.basename(full_pdf_path)}'. Se procesará como un solo archivo.")
+                        is_grouped = True
                     doc_check.close()
                 except Exception as e:
-                    print(f"ADVERTENCIA: Error al intentar dividir '{os.path.basename(full_pdf_path)}': {e}. Se procesará como un solo archivo.")
-                # --------------------------------------------------------------------
-
-                # Si el código llega aquí, el archivo no fue excluido, NO estaba en el log,
-                # y no fue un PDF agrupado (o no se pudo dividir), así que se añade directamente.
-                new_non_excluded_file_paths.append(full_pdf_path)
+                    print(f"ADVERTENCIA: Error al abrir '{os.path.basename(full_pdf_path)}' para verificar paginas: {e}. Se tratará como archivo simple.")
+                
+                # Añadir la ruta original y la bandera de agrupado
+                new_non_excluded_file_paths_for_export.append(f"{full_pdf_path}|{'grouped' if is_grouped else 'standalone'}")
 
     # --- 3. REPORTE FINAL ---
     total_pdfs_excluidos = total_pdfs_excluidos_por_regla + total_pdfs_excluidos_por_fecha
@@ -168,22 +152,21 @@ def generador_lista_archivos_no_excluidos(config: Config):
     print(f"    - Por prefijo/sufijo en nombre de archivo: {total_pdfs_excluidos_por_regla}")
     print(f"    - Por año en nombre o fecha de modificación: {total_pdfs_excluidos_por_fecha}")
     print(f"  Total de archivos PDF no excluidos *ya procesados anteriormente*: {total_pdfs_ya_procesados}")
-    print(f"  Total de PDFs agrupados procesados y divididos: {total_pdfs_agrupados_divididos}")
     print(f"  -------------------------------------------------------------")
-    print(f"  Total de archivos PDF *NUEVOS NO EXCLUIDOS* (para procesamiento): {len(new_non_excluded_file_paths)}\n")
+    print(f"  Total de archivos PDF *NUEVOS NO EXCLUIDOS* (para procesamiento): {len(new_non_excluded_file_paths_for_export)}\n")
 
     # --- 4. GUARDAR LA LISTA EN ARCHIVO ---
     try:
         with open(config.ruta_nuevo_archivo_no_excluidos, 'w', encoding='utf-8') as f:
-            for path in new_non_excluded_file_paths:
-                f.write(f"{path}\n")
+            for path_with_flag in new_non_excluded_file_paths_for_export:
+                f.write(f"{path_with_flag}\n")
         print(f"Lista de archivos NUEVOS NO excluidos guardada en: '{config.ruta_nuevo_archivo_no_excluidos}'")
     except Exception as e:
         print(f"Error al guardar la lista de archivos NUEVOS NO excluidos en '{config.ruta_nuevo_archivo_no_excluidos}': {e}")
 
-    return new_non_excluded_file_paths
+    return [item.split('|')[0] for item in new_non_excluded_file_paths_for_export]
 # --- 5. EJECUCIÓN PRINCIPAL ---
 if __name__ == '__main__':
-    current_config = Config() # Se usará la Config de etl_pdf_entrenamiento
+    current_config = Config()
     archivos_nuevos_no_excluidos_list = generador_lista_archivos_no_excluidos(current_config)
     print(f"\nGeneración de lista de archivos NUEVOS NO excluidos completada. Se encontraron {len(archivos_nuevos_no_excluidos_list)} archivos NUEVOS NO excluidos.")
