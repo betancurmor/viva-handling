@@ -25,7 +25,7 @@ class Config:
         # Nombre de outfolder Constancias(pdf's)
         self.NOMBRE_FOLDER_CONSTANCIAS = 'Certificados Entrenamiento Viva Handling'
         self.NOMBRE_FOLDER_ONEDRIVE_CONSTANCIAS = '2.Constancias_actual'
-        self.NOMBRE_FOLDER_CONSTANCIAS_BAJAS = 'BAJAS'
+        self.NOMBRE_FOLDER_CONSTANCIAS_BAJAS = '1. BAJAS'
 
         # Folders paths
         self.folder_data_processed = r'.\data\processed'
