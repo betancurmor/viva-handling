@@ -1,4 +1,6 @@
 import os # manejo de paths
+import stat # proporciona constantes y funciones para interpretar los resultados de llamadas al sistema
+import time
 import fitz # manejo y extraccion de texto(pdf)
 import re # uso de regular expretion
 import pandas as pd
@@ -137,6 +139,135 @@ def _guardar_registro_procesado_a_disco(config: Config):
         print(f"Registro de archivo procesados actualizado con {len(config.processed_files_set_in_memory)} rutas unicas en: '{config.outpath_processed_files_log}'")
     except Exception as e:
         print(f"ERROR: No se pudo guardar el registro de archivos procesados en: '{config.outpath_processed_files_log}'. Error: {e}")  
+
+def rmtree_onerror_retry(func, path, exc_info):
+    """
+    Función de manejo de errores para shutil.rmtree.
+    Si el error es por PermissionError, intenta cambiar los permisos del archivo
+    a escribible y reintenta la operación. Si no es PermissionError, propaga la excepción.
+    """
+    ex_type, ex_value, ex_traceback = exc_info
+    if ex_type is PermissionError:
+        print(f"  - DEBUG: Permiso denegado para '{path}'. Intentando cambiar permisos...")
+        try:
+            # Cambia los permisos del archivo para que sea escribible para el usuario propietario
+            os.chmod(path, stat.S_IWUSR)
+            func(path) # Reintenta la función que falló (os.remove o os.rmdir)
+            print(f"  - DEBUG: Permisos cambiados y operación reintentada en '{path}'.")
+        except Exception as retry_e:
+            print(f"  - ADVERTENCIA: Falló el reintento después de cambiar permisos en '{path}': {retry_e}")
+            raise # Re-lanza si el reintento también falla
+    else:
+        # Si no es PermissionError, re-lanza la excepción original para que se maneje arriba
+        raise
+
+def mover_carpetas_bajas(config: Config):
+    """
+    Identifica las carpetas de empleados en la ruta de activos que corresponden a
+    empleados con estatus 'BAJA' según hc_table.csv, y las mueve a la carpeta de bajas.
+    Esta función debe ejecutarse antes de procesar nuevas constancias para evitar duplicados.
+    """
+    print("\n[SCRIPT NO DIARIO] Iniciando la verificación y movimiento de carpetas de empleados BAJA...")
+
+    df_hc = pd.DataFrame()
+    try:
+        df_hc = pd.read_csv(config.file_hc_table, encoding='utf-8')
+        df_hc['#emp'] = df_hc['#emp'].astype('string').str.strip()
+        df_hc['estatus'] = df_hc['estatus'].astype('string').str.upper().str.strip()
+    except FileNotFoundError:
+        print(f"Advertencia: No se encontró 'hc_table.csv' en '{config.file_hc_table}'. No se moverán carpetas de bajas.")
+        return
+    except Exception as e:
+        print(f"Error al cargar 'hc_table.csv' para mover carpetas de bajas: {e}. No se moverán carpetas.")
+        return
+
+    baja_emp_set = set(df_hc[df_hc['estatus'] == 'BAJA']['#emp'].unique())
+    if not baja_emp_set:
+        print("No se encontraron empleados con estatus 'BAJA' en 'hc_table.csv'. Saltando movimiento de carpetas.")
+        return
+
+    source_root_active = config.outpath_onedrive_constancias_pdfs
+    destination_root_bajas = config.outpath_onedrive_constancias_bajas_pdfs
+
+    os.makedirs(destination_root_bajas, exist_ok=True)
+
+    moved_count = 0
+    skipped_count = 0
+    error_count = 0
+
+    if not os.path.exists(source_root_active):
+        print(f"Advertencia: La carpeta de certificados activos '{source_root_active}' no existe. No hay carpetas para mover.")
+        return
+
+    for folder_name in os.listdir(source_root_active):
+        current_folder_path = os.path.join(source_root_active, folder_name)
+
+        if not os.path.isdir(current_folder_path):
+            continue
+
+        if current_folder_path == destination_root_bajas:
+            continue
+        
+        emp_id_str = None
+        try:
+            if folder_name.isdigit() and int(folder_name) != 0:
+                emp_id_str = folder_name.strip()
+            else:
+                skipped_count += 1
+                continue
+        except ValueError:
+            skipped_count += 1
+            continue
+
+        if emp_id_str in baja_emp_set:
+            target_folder_path = os.path.join(destination_root_bajas, folder_name)
+
+            # --- Fase 1: Intentar eliminar la carpeta existente en BAJAS con reintentos ---
+            max_retries = 5 # Número de intentos
+            current_retry = 0
+            deletion_succeeded = False
+
+            if os.path.exists(target_folder_path):
+                print(f"  - INFO: Carpeta '{folder_name}' ya existe en destino de BAJAS. Intentando eliminarla para reemplazarla.")
+                while current_retry < max_retries and not deletion_succeeded:
+                    try:
+                        shutil.rmtree(target_folder_path, onerror=rmtree_onerror_retry)
+                        print(f"  - INFO: Carpeta '{folder_name}' eliminada exitosamente del destino de BAJAS.")
+                        deletion_succeeded = True
+                    except PermissionError as e_perm:
+                        current_retry += 1
+                        print(f"  - ADVERTENCIA: Permiso denegado al eliminar '{target_folder_path}' (Intento {current_retry}/{max_retries}). Reintentando en 0.5 segundos...")
+                        time.sleep(0.5) # Pequeño retardo
+                    except Exception as e_rmtree:
+                        print(f"  - ERROR: Falló la eliminación de la carpeta existente en BAJAS '{target_folder_path}': {e_rmtree}. Este error probablemente impide el movimiento.")
+                        error_count += 1
+                        break # Salir del bucle de reintentos por un error no manejable
+                
+                if not deletion_succeeded:
+                    print(f"  - ERROR: No se pudo eliminar la carpeta '{target_folder_path}' después de {max_retries} intentos. Saltando el movimiento para este empleado.")
+                    error_count += 1
+                    continue # Saltar al siguiente empleado si no podemos limpiar el destino
+
+            # --- Fase 2: Intentar mover la carpeta del activo a Bajas ---
+            try:
+                # Si llegamos aquí, la carpeta de destino o no existía o se eliminó con éxito.
+                # Ahora shutil.move debería funcionar.
+                shutil.move(current_folder_path, destination_root_bajas)
+                print(f"  - MOVIO: Carpeta de empleado '{folder_name}' a '{destination_root_bajas}'.")
+                moved_count += 1
+            except FileNotFoundError:
+                print(f"  - ERROR: Carpeta de origen no encontrada para mover: '{current_folder_path}'. Saltando.")
+                error_count += 1
+            except Exception as e_move:
+                print(f"  - ERROR: Falló el movimiento de la carpeta activa '{current_folder_path}' a '{destination_root_bajas}': {e_move}. Esto podría ocurrir si la carpeta de origen también está bloqueada.")
+                error_count += 1
+        else:
+            skipped_count += 1
+
+    print(f"\n[SCRIPT NO DIARIO] Verificación y movimiento de carpetas BAJA completado:")
+    print(f"  - Total de carpetas movidas: {moved_count}")
+    print(f"  - Total de carpetas saltadas (no BAJA o no numéricas): {skipped_count}")
+    print(f"  - Total de errores durante el movimiento: {error_count}\n")
 
 def cargar_rutas_archivos_desde_archivo(file_name):
     """
@@ -1039,7 +1170,7 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_base_act
     Sobrescribe archivos existentes (no crea duplicados con sufijos).
     """
     print(f"Iniciando organización de archivos. Destino base para ACTIVOS: {outpath_base_activos}")
-    print(f"Destino para BAJAS: {config.outpath_constancias_bajas_pdfs}")
+    print(f"Destino para BAJAS: {config.outpath_onedrive_constancias_bajas_pdfs}")
 
     pdfs_organizados = 0
     pdfs_no_organizados_error_copia = 0
@@ -1069,7 +1200,7 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_base_act
 
         # Determinar la carpeta de destino basada en el estatus
         if estatus_empleado == 'BAJA':
-            target_base_folder = config.outpath_constancias_bajas_pdfs
+            target_base_folder = config.outpath_onedrive_constancias_bajas_pdfs
             # Si es BAJA, incrementa este contador, independientemente de si tiene #emp=0
             pdfs_bajas_organizados += 1
         else: # Incluye 'ALTA' y 'DESCONOCIDO'. Los '#emp == 0' también caen aquí, a menos que sean 'BAJA'.
@@ -1293,6 +1424,9 @@ def main():
             print(f"ADVERTENCIA: No se pudo limpiar la carpeta temporal '{config.temp_split_pdfs_folder}' al inicio. Error: {e}")
     os.makedirs(config.temp_split_pdfs_folder, exist_ok=True) # Asegurarse de que exista después de limpiar o si no existía
 
+    # Mover carpetas de empleados 'BAJA' ANTES de procesar nuevas constancias ---
+    mover_carpetas_bajas(config)
+
     # 1. Cargar la lista de archivos (path, is_grouped_flag) desde el generador
     list_of_source_files_with_flags = cargar_rutas_archivos_desde_archivo(config.file_lista_pdfs_nuevos_no_excluidos)
 
@@ -1363,7 +1497,7 @@ def main():
     df_final = normalizar_y_categorizar_fechas(df_constancias_merged, config.mapeo_meses, config.vocales_acentos)
 
     # 7. Organizar los archivos PDF en carpetas por empleado
-    organizar_archivos_pdf(df_final, config.outpath_constancias_pdfs, config)
+    organizar_archivos_pdf(df_final, config.outpath_onedrive_constancias_pdfs, config)
 
     # 8. Exportar resultados
     exportar_resultados(df_final, config.outpath_xlsx, config.outpath_csv)

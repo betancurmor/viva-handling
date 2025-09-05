@@ -107,3 +107,34 @@ El proyecto se encuentra en una **fase avanzada de proceso y refinamiento**. Act
 *   **Interfaz Gráfica de Usuario (GUI):** La futura implementación de una GUI permitirá a usuarios no técnicos interactuar con el pipeline de forma intuitiva, facilitando la configuración de rutas y la ejecución de los procesos con solo unos clics. Esto mejorará significativamente la usabilidad y accesibilidad del sistema.
 
 ## 📁 Estructura del Proyecto
+* .
+* ├── data/
+* │ ├── processed/
+* │ │ ├── dashboard_tables/ # Tablas limpias para dashboards (CSV)
+* │ │ ├── Certificados Entrenamiento Viva Handling/ # PDFs organizados por empleado
+* │ │ │ ├── 0/ # Constancias sin #emp asignado
+* │ │ │ ├── 0/ # Constancias sin #emp asignado
+* │ │ │ ├── 12345/ # Ejemplo: Carpeta de empleado 12345 (activos)
+* │ │ │ └── 1. BAJAS/ # Constancias de empleados dados de baja
+* │ │ │ └── 54321/ # Ejemplo: Carpeta de empleado 54321 (baja)
+* │ │ ├── temp_split_pdfs/ # PDFs temporales generados al dividir agrupados
+* │ │ ├── datos_constancias.xlsx
+* │ │ ├── datos_constancias.csv
+* │ │ ├── datos_constancias_sin_emp.xlsx
+* │ │ ├── datos_constancias_sin_emp.csv
+* │ │ └── registro_archivos_procesados.txt
+* │ └── raw/ # Fuentes de datos originales
+* ├── etl_bd_hc.py # Script para la preparación de tablas de HC para dashboards
+* ├── etl_pdf_entrenamiento.py # Script principal ETL de constancias PDF
+* ├── generador_lista_no_excluidos.py # Script para identificar y filtrar nuevos PDFs
+* └── README.md
+
+## 🤝 Contribución
+
+Actualmente, el proyecto se mantiene de forma individual. Si estás interesado en contribuir o tienes sugerencias, no dudes en contactarme.
+
+## 📞 Contacto
+
+Puedes conectar conmigo a través de mi perfil de LinkedIn:
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/bryan-betancur-420103255/)
