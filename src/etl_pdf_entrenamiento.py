@@ -96,9 +96,9 @@ class Config:
 
         # Prefijos y sufijos a excluir (insensibles a mayúsculas/minúsculas)
         self.prefijos_excluidos = [
-            'bitcora', 'bitacora ', 'fori ', 'ojt ', '2024 rtar ', 'ef-', 'ef ', 'ex-', 'ex ', 'id ', 'id-', 'la ', 'la-', 'l.a.', 'l.a. ', 'l.a.-', 'ro-', 'ro ', 'sat-ro', 'pb', 'laf', '2025-r', 'dif ', 'dif-', 'td', 'green', '09 bajas', 'bajas', 'bitacora'
-        ]
-        self.sufijos_excluidos = ['cun', 'gc-25', 'gp-25', ' ro']
+            'bitcora', 'bitacora ', 'fori ', 'ojt ', '2024 rtar ', 'ef-', 'ef ', 'ex-', 'ex ', 'id ', 'id-', 'la ', 'la-', 'l.a.', 'l.a. ', 'l.a.-', 'ro-', 'ro ', 'sat-ro', 'pb', 'laf', '2025-r', 'dif ', 'dif-', 'td', 'green', 'bajas', 'bitacora'
+        ] # Quitamos '09 Bajas' por necesidad de constancias
+        self.sufijos_excluidos = ['cun', 'gc-25', 'gp-25'] # Quitamos ' ro' por necesidad de constancias
 
         # Nombre y ruta del archivo de salida:
         # --- Archivo log, guarda todas las rutas de los archivos procesados
@@ -186,8 +186,8 @@ def mover_carpetas_bajas(config: Config):
         print("No se encontraron empleados con estatus 'BAJA' en 'hc_table.csv'. Saltando movimiento de carpetas.")
         return
 
-    source_root_active = config.outpath_onedrive_constancias_pdfs
-    destination_root_bajas = config.outpath_onedrive_constancias_bajas_pdfs
+    source_root_active = config.outpath_constancias_pdfs
+    destination_root_bajas = config.outpath_constancias_bajas_pdfs
 
     os.makedirs(destination_root_bajas, exist_ok=True)
 
@@ -401,8 +401,8 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
 
     elif constancia_type == "SMS":
         datos['Curso'] = 'SMS'
-        print(f"\nImprimiento texto extraido de la constancia 'SMS': {file_name}\n")
-        print(texto_extraido) # Pruebas
+        # print(f"\nImprimiento texto extraido de la constancia 'SMS': {file_name}\n")
+        # print(texto_extraido) # Pruebas
 
         # Nombre: Prioridad 1 - después de "Grants this recognition to:"
         patron_nombre_grants = r"Grants\s+this\s+recognition\s+to:\s*\n*(.*?)(?:\n|$)"
@@ -465,35 +465,6 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
                 fecha_limpia = re.sub(r'\s+', ' ', coincidencia_fecha.group(1)).replace('del', 'de').strip()
                 datos['Fecha'] = fecha_limpia
 
-        #  # Grupo: robusto para varios formatos
-        # patron_grupo_n = r"(SMS[\s-]N-\d{3,4}-\d{2})" # Patrón para SMS-N-XXX-YY
-        # coincidencia_grupo = re.search(patron_grupo_n, texto_extraido)
-        # if coincidencia_grupo:
-        #     datos['Grupo'] = coincidencia_grupo.group(1).strip()
-        # else:
-        #     patron_grupo_sac = r"(SMS-SAC-\d{3,4}-\d{2})" # Patrón para SMS-SAC-XXX-YY
-        #     coincidencia_grupo_sac = re.search(patron_grupo_sac, texto_extraido)
-        #     if coincidencia_grupo_sac:
-        #         datos['Grupo'] = coincidencia_grupo_sac.group(1).strip()
-        #     else:
-        #         # NUEVA LÓGICA: Patrón para SMS-DDD-YY (e.g., SMS-658-25)
-        #         patron_grupo_sms_directo = r"(SMS-\d{3,4}-\d{2})"
-        #         coincidencia_grupo_sms_directo = re.search(patron_grupo_sms_directo, texto_extraido)
-        #         if coincidencia_grupo_sms_directo:
-        #             datos['Grupo'] = coincidencia_grupo_sms_directo.group(1).strip()
-        #         else:
-        #             # El patrón general existente (se usará si los anteriores no coinciden)
-        #             patron_grupo_general = r"(SMS\s*–\s*[A-Z]+\s*–\s*\d+\s*-\s*\d+|SMS[\s-]?N-\d+-\d+|SMS-SAC-\d+-\d+)"
-        #             coincidencia_grupo_general = re.search(patron_grupo_general, texto_extraido)
-        #             if coincidencia_grupo_general:
-        #                 datos['Grupo'] = coincidencia_grupo_general.group(1).strip()
-        #             else:
-        #                 # El patrón genérico "Grupo:" (último recurso)
-        #                 patron_sin_sms = r"Grupo:\s*(\d+-\d+|[A-Z]+-[A-Z]+-[A-Z]-\d+-\d+)"
-        #                 coincidencia_sin_sms = re.search(patron_sin_sms, texto_extraido)
-        #                 if coincidencia_sin_sms:
-        #                     datos['Grupo'] = coincidencia_sin_sms.group(1).strip()                
-
         # Grupo: robusto para varios formatos
         # Priority 1: SMS-N-XXX-YY
         patron_grupo_n = r"(SMS[\s-]N-\d{3,4}-\d{2})"
@@ -525,7 +496,6 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
                         if coincidencia_sin_sms:
                             datos['Grupo'] = coincidencia_sin_sms.group(1).strip()
                         else:
-                            # --- NUEVA LÓGICA: FALLBACK PARA GRUPOS AVSEC DENTRO DE CERTIFICADOS SMS ---
                             # Intentar encontrar un patrón de grupo AVSEC si todos los SMS fallaron.
                             # Priority 6 (dentro del bloque SMS): Grupo AVSEC con prefijo "Grupo:"
                             patron_grupo_avsec_fallback_1 = r"Grupo:\s*((?:VH-)?(?:PRO-)?AVSEC-\d{3,4}-\d{2}\b)"
@@ -1041,7 +1011,23 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
 
     # Modificacion de nombre manual por error en constancia.
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('RAUL LUNA UIZAR', 'RAUL LUNA HUIZAR', regex=False)
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('MENDOZA GAONA ROCIO YAMILETH', 'MENDOZA GAONA ROCIO YAMILET', regex=False)
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('DULCE MARTINEZ ORTIZ', 'DULCE AMADA MARTINEZ ORTIZ')
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('SOTO MORSLES JUANA MARIA', 'SOTO MORALES JUANA MARIA', regex=False)
 
+    # Modificacion de fecha manual por error en constancia.
+    df_constancias.loc[
+        (df_constancias['nombre_completo'] == 'AGUILAR CORONADO JOSE ANGEL DE JESUS') & 
+        (df_constancias['fecha'] == '2027-06-27'), 
+        'fecha'
+        ] = '2024-06-27'
+    
+    df_constancias.loc[
+        (df_constancias['nombre_completo'] == 'PORTOS GAMEZ HECTOR ABRAHAM') & 
+        (df_constancias['fecha'] == '2026-06-26'), 
+        'fecha'
+        ] = '2024-06-26'
+    
     # --- DOBLE MERGE PARA MEJORAR COINCIDENCIAS DE NOMBRES
 
     # Primer merge con el formato "NOMBRE APELLIDO(P) APELLIDO(M)" en 'df_constancias' vs "NOMBRE APELLIDO(P) APELLIDO(M)" en 'df_hc'
@@ -1170,7 +1156,7 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_base_act
     Sobrescribe archivos existentes (no crea duplicados con sufijos).
     """
     print(f"Iniciando organización de archivos. Destino base para ACTIVOS: {outpath_base_activos}")
-    print(f"Destino para BAJAS: {config.outpath_onedrive_constancias_bajas_pdfs}")
+    print(f"Destino para BAJAS: {config.outpath_constancias_bajas_pdfs}")
 
     pdfs_organizados = 0
     pdfs_no_organizados_error_copia = 0
@@ -1200,7 +1186,7 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_base_act
 
         # Determinar la carpeta de destino basada en el estatus
         if estatus_empleado == 'BAJA':
-            target_base_folder = config.outpath_onedrive_constancias_bajas_pdfs
+            target_base_folder = config.outpath_constancias_bajas_pdfs
             # Si es BAJA, incrementa este contador, independientemente de si tiene #emp=0
             pdfs_bajas_organizados += 1
         else: # Incluye 'ALTA' y 'DESCONOCIDO'. Los '#emp == 0' también caen aquí, a menos que sean 'BAJA'.
@@ -1293,6 +1279,14 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
 
     # Organizar columnas e incluir 'nombre_archivo_nuevo'
     df_final = df_constancias_merged[['nombre_archivo', 'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'estatus', 'curso_homologado','curso', 'instructor', 'grupo', 'fecha', 'fecha_asignada', 'fecha_vigencia', 'estatus_vigencia', 'ruta_original', 'original_source_path']]
+
+    # Eliminar duplicados basándose solo en las columnas especificadas
+    columns_to_consider_for_duplicates = [
+    'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'estatus',
+    'curso_homologado', 'curso', 'instructor', 'grupo', 'fecha_asignada']
+    df_final = df_final.drop_duplicates(subset=columns_to_consider_for_duplicates)
+
+    df_final = df_final.drop_duplicates()
     df_final = df_final.reset_index(drop=True)
 
     return df_final
@@ -1457,7 +1451,7 @@ def main():
                     except Exception as e:
                         print(f"Error al extraer datos de la página temporal '{os.path.basename(temp_path)}': {e}")
             else:
-                print(f"ADVERTENCIA: No se pudieron extraer constancias válidas de '{os.os.path.basename(source_pdf_path)}'.")
+                print(f"ADVERTENCIA: No se pudieron extraer constancias válidas de '{os.path.basename(source_pdf_path)}'.")
         else: # PDF Standalone
             print(f"Procesando PDF standalone: {os.path.basename(source_pdf_path)}")
             try:
@@ -1466,7 +1460,7 @@ def main():
                 all_extracted_data.append(extracted_datum)
                 total_extracted_certificates += 1
             except Exception as e:
-                print(f"Error al extraer datos de '{os.os.path.basename(source_pdf_path)}': {e}")
+                print(f"Error al extraer datos de '{os.path.basename(source_pdf_path)}': {e}")
         
         total_files_processed_for_data_extraction += 1
 
@@ -1497,7 +1491,7 @@ def main():
     df_final = normalizar_y_categorizar_fechas(df_constancias_merged, config.mapeo_meses, config.vocales_acentos)
 
     # 7. Organizar los archivos PDF en carpetas por empleado
-    organizar_archivos_pdf(df_final, config.outpath_onedrive_constancias_pdfs, config)
+    organizar_archivos_pdf(df_final, config.outpath_constancias_pdfs, config)
 
     # 8. Exportar resultados
     exportar_resultados(df_final, config.outpath_xlsx, config.outpath_csv)
