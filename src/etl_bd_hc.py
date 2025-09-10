@@ -103,7 +103,7 @@ def limpiar_columna_id(series, caracteres_a_eliminar=None):
     Limpia una serie(columna) de ID que pueden contener caracteres no numericos. Convierte a string, quita espacios al inicio/final, elimina caracteres especificos, luego a numerico y finalmente a 'int64', rellanando NaNs con 0.
     """
 
-    s = series.astype(str).str.strip().str.replace(r'\s+', '', regex=True)
+    s = series.astype(str).str.strip().str.replace(r'\s+', '', regex=True).str.replace('.0', '', regex=False)
     if caracteres_a_eliminar:
         for c in caracteres_a_eliminar:
             s = s.str.replace(c, '', regex=False)
@@ -216,6 +216,9 @@ def run_hc_etl():
     df_entrenamiento = df_entrenamiento.drop_duplicates().sort_values(['#emp', 'curso'])
     df_entrenamiento = df_entrenamiento.rename(columns={'status': 'estatus_vigencia'})
 
+    df_entrenamiento.to_csv('prueba_entrenamiento.csv', encoding='utf-8', index=False)
+
+
     # -- Cursos Entrenamiento
     # ---- Tabla 'cursos_table'
     df_cursos = df_entrenamiento[['curso']]
@@ -301,6 +304,10 @@ def run_hc_etl():
     df_asistencia_sms['curso'] = 'SMS'
     df_asistencia = df_asistencia[df_asistencia['curso'] != 'AVSEC/SMS'].copy()
     df_asistencia = pd.concat([df_asistencia_avsec, df_asistencia_sms, df_asistencia], ignore_index=True)
+
+    # df_entrenamiento.to_csv('prueba_entrenamiento.csv', encoding='utf-8', index=False)
+    df_asistencia.to_csv('prueba_asistencia.csv', encoding='utf-8', index=False)
+
 
     # Merge: 'Entrenamiento', 'Asistencia'
     df_entrenamiento_asistencia = pd.merge(
