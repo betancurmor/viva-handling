@@ -63,6 +63,7 @@ def cargar_transformar_excel(file_path,
     """
 
     df = pd.read_excel(file_path, sheet_name=sheet_name, engine=engine)
+    df.columns = [normalizar_acentos(col) for col in df.columns]
     df.columns = df.columns.astype(str).str.lower().str.strip().str.replace(r'\s+', ' ', regex=True).str.replace(' ', '_', regex=False)
     df = df.loc[:, df.columns.notna()]
     df = df.drop_duplicates()
@@ -159,6 +160,8 @@ def run_hc_etl():
     df_hc = df_hc.rename(columns={'novedades_/_comentarios': 'novedades_comentarios'})
     df_hc = df_hc.rename(columns={'fechaalta': 'fecha_alta'})
 
+    df_hc['nombre_completo'] = df_hc['nombre_completo'].replace('REYES nan ALEJANDRO', 'REYES ALEJANDRO', regex=False)
+
     # Definir orden de columnas
     df_hc = df_hc[['#emp', 'nombre_completo', 'paterno','materno', 'nombre', 'rfc', 'curp', 'telefono', 'estatus','puesto', 'fecha_alta', 'fecha_antiguedad', 'fecha_baja', 'fecha_nacimiento', 'novedades_comentarios']]
 
@@ -216,7 +219,7 @@ def run_hc_etl():
     df_entrenamiento = df_entrenamiento.drop_duplicates().sort_values(['#emp', 'curso'])
     df_entrenamiento = df_entrenamiento.rename(columns={'status': 'estatus_vigencia'})
 
-    df_entrenamiento.to_csv('prueba_entrenamiento.csv', encoding='utf-8', index=False)
+    # df_entrenamiento.to_csv('prueba_entrenamiento.csv', encoding='utf-8', index=False)
 
 
     # -- Cursos Entrenamiento
@@ -306,7 +309,7 @@ def run_hc_etl():
     df_asistencia = pd.concat([df_asistencia_avsec, df_asistencia_sms, df_asistencia], ignore_index=True)
 
     # df_entrenamiento.to_csv('prueba_entrenamiento.csv', encoding='utf-8', index=False)
-    df_asistencia.to_csv('prueba_asistencia.csv', encoding='utf-8', index=False)
+    # df_asistencia.to_csv('prueba_asistencia.csv', encoding='utf-8', index=False)
 
 
     # Merge: 'Entrenamiento', 'Asistencia'

@@ -896,6 +896,10 @@ def cargar_data_hc(path_hc_table: str, vocales_acentos_map: dict):
             df_hc['nombre_completo'] = df_hc['nombre_completo_invertido']
 
         df_hc['#emp'] = df_hc['#emp'].astype('string').str.strip()
+
+        df_hc['nombre_completo'] = df_hc['nombre_completo'].str.replace('REYES nan ALEJANDRO', 'REYES ALEJANDRO', regex=False)
+
+
         print(f"\nTabla de empleados cargada exitosamente desde: {path_hc_table}\n")
     except FileNotFoundError:
         print(f"\nAdverencia: El archivo de empleados '{path_hc_table}' no fue encontrado. El proceso continuara sin datos de empleados para merge.\n")
@@ -966,7 +970,8 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         'CRUZ SANTIAGO SARA.pdf',
         'OP 2024 PORTOS GAMEZ HECTOR ABRAHAM (1) (1).pdf',
         'OP 2024 PORTOS GAMEZ HECTOR ABRAHAM (1).pdf',
-        'OP-0011-25.pdf'
+        'OP-0011-25.pdf',
+        'PRUDENCIO CAPACIDAD RTAR.pdf'
     ]
     df_filtrado = df_constancias[~df_constancias['nombre_archivo'].isin(archivos_expecificos_a_excluir)]
     eliminados_por_nombres_especificos = recuento_filas_actuales - len(df_filtrado)
@@ -1016,23 +1021,32 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('SOTO MORSLES JUANA MARIA', 'SOTO MORALES JUANA MARIA', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('OFELIA CLEMENTINA CORONADO CARRIZALEZ', 'OFELIA CLEMENTINA CORONADO CARRIZALES', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('SAGRARIO NUNEZ TOVAR', 'SAGRARIO NUÑEZ TOVAR', regex=False)
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('REYES O ALEJANDRO', 'REYES ALEJANDRO', regex=False)
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('MONTREAL SALAS HUGO HUMBERTO', 'MONRREAL SALAS HUGO HUMBERTO', regex=False)   
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('ABELDAÑO LEAL REGINA SAORI', 'ALBELDAÑO LEAL REGINA SAORI', regex=False)
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('IBARRA TREVIÑO BRAYAN ARTURO', 'IBARRA TREVIO BRAYAN ARTURO', regex=False)
 
     # Modificacion de fecha manual por error en constancia.
     df_constancias.loc[
-        (df_constancias['nombre_archivo'] == 'OP 2024 AGUILAR CORONADO JOSE ANGEL DE JESUS.pdf'), 
+        (df_constancias['nombre_archivo'] == 'OP 2024 SERRATO VELAZQUEZ VANESSA ESMERALDA.pdf') & (df_constancias['fecha'] == '29 JUNIO-2029.'), 
         'fecha'
-        ] = '2024-06-27'
+        ] = '29 JUNIO-2024.'
     
     df_constancias.loc[
-        (df_constancias['nombre_archivo'] == 'OP 2024 PORTOS GAMEZ HECTOR ABRAHAM.pdf'), 
+        (df_constancias['nombre_archivo'] == 'OP 2024 PORTOS GAMEZ HECTOR ABRAHAM.pdf') & (df_constancias['fecha'] == '26 JUNIO-2026.'), 
         'fecha'
-        ] = '2024-06-26'
-
+        ] = '26 JUNIO-2024.'
+    
     df_constancias.loc[
-        (df_constancias['nombre_archivo'] == 'OP 2024 SERRATO VELAZQUEZ VANESSA ESMERALDA.pdf'), 
+        (df_constancias['nombre_archivo'] == 'OP 2024 AGUILAR CORONADO JOSE ANGEL DE JESUS.pdf') & (df_constancias['fecha'] == '27 JUNIO-2027.'), 
         'fecha'
-        ] = '2024-06-29'
-
+        ] = '27 JUNIO-2024.'
+    
+    df_constancias.loc[
+        (df_constancias['nombre_archivo'] == 'OP 2025 MONTREAL SALAS HUGO HUMBERTO.pdf') & (df_constancias['fecha'] == 'MONTREAL SALAS Hugo Humberto Febrero-2025.'), 
+        'fecha'
+        ] = '25 FEBRERO-2025.'
+    
 
     # --- DOBLE MERGE PARA MEJORAR COINCIDENCIAS DE NOMBRES
 
