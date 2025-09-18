@@ -971,7 +971,9 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         'OP 2024 PORTOS GAMEZ HECTOR ABRAHAM (1) (1).pdf',
         'OP 2024 PORTOS GAMEZ HECTOR ABRAHAM (1).pdf',
         'OP-0011-25.pdf',
-        'PRUDENCIO CAPACIDAD RTAR.pdf'
+        'PRUDENCIO CAPACIDAD RTAR.pdf',
+        'TTT 2024 GUERRERO DE LA GARZA FRANCISCO.pdf',
+        'TTT 2024 GONZALEZ ESCALANTE EDUARDO SILVANO.pdf'
     ]
     df_filtrado = df_constancias[~df_constancias['nombre_archivo'].isin(archivos_expecificos_a_excluir)]
     eliminados_por_nombres_especificos = recuento_filas_actuales - len(df_filtrado)
@@ -1311,98 +1313,159 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
 
     return df_final
 
-def exportar_resultados(df_final: pd.DataFrame, outpath_xlsx, outpath_csv):
+def exportar_resultados(df_final: pd.DataFrame, outpath_xlsx: str, outpath_csv: str, config: Config):
     """
-    Exporta el DataFrame final a archivos Excel y CSV con formato.
+    Exporta el DataFrame final a archivos Excel y CSV. Si los archivos existen,
+    concatena los nuevos datos, elimina duplicados y luego guarda el DataFrame combinado.
     """
 
     if df_final.empty:
-        print("Data Frame vacio, no hay resultados para exportar.")
+        print("Data Frame vacío, no hay resultados para exportar.")
         return
 
-    # Exportacion a Excel
-    try:
-        writer = pd.ExcelWriter(outpath_xlsx, engine='xlsxwriter')
-        df_final.to_excel(writer, sheet_name='Historial Constancias', index=False)
-        # df_errores_constancias.to_excel(writer, sheet_name='Errores Constancias', index=False)
-        # Acceder al objeto workbook y worksheet de xlsxwriter para aplicar formato
-        workbook = writer.book
-        worksheet = writer.sheets['Historial Constancias']
+    # Columnas a considerar para la deduplicación (identificador único de una constancia)
+    deduplication_subset_cols = [
+        'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'curso_homologado', 'fecha_asignada'
+    ]
+    
+    # Definir tipos de datos comunes para asegurar consistencia al leer archivos existentes.
+    # Leer '#emp' como string para evitar problemas con valores mixtos o nulos durante la concatenación,
+    # luego se convertirá a int al final.
+    common_dtypes = {
+        '#emp': 'string',
+        'nombre_archivo': 'string',
+        'nombre_archivo_nuevo': 'string',
+        'nombre_completo': 'string',
+        'estatus': 'string',
+        'curso_homologado': 'string',
+        'curso': 'string',
+        'instructor': 'string',
+        'grupo': 'string',
+        'fecha': 'string',
+        'estatus_vigencia': 'string',
+        'ruta_original': 'string',
+        'original_source_path': 'string'
+    }
+    date_cols = ['fecha_asignada', 'fecha_vigencia']
 
-        # --- Definir Formatos ---
+    # Función auxiliar para procesar y guardar datos en Excel o CSV
+    def _process_and_save(df_new_data: pd.DataFrame, file_path: str, is_excel: bool):
+        df_combined = df_new_data.copy()
+        file_type = "Excel" if is_excel else "CSV"
+        
+        if os.path.exists(file_path):
+            print(f"Cargando datos existentes de {file_type}: {file_path}")
+            try:
+                if is_excel:
+                    df_existing = pd.read_excel(file_path, dtype=common_dtypes, parse_dates=date_cols)
+                else: # CSV
+                    df_existing = pd.read_csv(file_path, dtype=common_dtypes, parse_dates=date_cols, encoding='utf-8')
+                
+                # Asegurar que las columnas de fecha en los datos existentes estén en formato datetime
+                for col in date_cols:
+                    if col in df_existing.columns:
+                        df_existing[col] = pd.to_datetime(df_existing[col], errors='coerce')
+                
+                # Convertir '#emp' a string en df_new_data para una concatenación consistente
+                if '#emp' in df_new_data.columns:
+                    df_new_data['#emp'] = df_new_data['#emp'].astype('string')
+                
+                # Alinear columnas y concatenar
+                # Asegurar que todas las columnas de df_new_data estén presentes en df_existing,
+                # añadiendo las que falten con valores NaN para evitar errores de concatenación.
+                missing_cols_in_existing = set(df_new_data.columns) - set(df_existing.columns)
+                for col in missing_cols_in_existing:
+                    df_existing[col] = pd.NA # O un valor predeterminado adecuado
+                
+                df_combined = pd.concat([df_existing, df_new_data], ignore_index=True)
+                
+                print(f"Combinando con {len(df_existing)} registros existentes.")
+                
+                # Eliminar duplicados del DataFrame combinado
+                initial_rows = len(df_combined)
+                df_combined_deduplicated = df_combined.drop_duplicates(subset=deduplication_subset_cols, keep='first')
+                rows_removed = initial_rows - len(df_combined_deduplicated)
+                print(f"Eliminados {rows_removed} registros duplicados de {file_type}.")
+                
+                df_combined = df_combined_deduplicated
+            
+            except Exception as e:
+                print(f"ADVERTENCIA: Error al cargar y combinar el archivo {file_type} existente '{file_path}': {e}. Se exportarán solo los nuevos datos.")
+                # En caso de error, se procede solo con los nuevos datos
+                df_combined = df_new_data.copy()
+        
+        # Asegurar que la columna '#emp' sea de tipo entero antes de la exportación final
+        if '#emp' in df_combined.columns:
+            # Primero, limpiar cualquier valor no numérico que pueda haber, reemplazándolos con NaN
+            df_combined['#emp'] = pd.to_numeric(df_combined['#emp'], errors='coerce')
+            # Luego, llenar NaN con 0 y convertir a entero
+            df_combined['#emp'] = df_combined['#emp'].fillna(0).astype(int)
 
-        # Formato para los encabezados
-        header_format = workbook.add_format({
-            'bold': True,
-            'font_size': 11,
-            'text_wrap': True,
-            'valign': 'vcenter',
-            'border': 1,
-            'align' : 'center',
-            'bg_color': '#9CEF00'
-        })
-
-        # Formato para los datos generales
-        data_format = workbook.add_format({
-            'font_size': 11,
-            'text_wrap': True,
-            'valign': 'top'
-            #'border': 1
-        })
-
-        # --- Formato para las celdas de fecha ---
-        date_format = workbook.add_format({
-            'font_size': 11,
-            'text_wrap': True,
-            'valign': 'top',
-            #'border' : 1,
-            'num_format': 'dd/mm/yyyy' # Puedes cambiar 'dd/mm/yyyy' a 'yyyy-mm-dd', 'm/d/yy', etc.
-        })
-
-        # --- Aplicar Formatos y Ancho de Columnas ---
-        for i, col in enumerate(df_final.columns):
-            # Calcular el ancho máximo necesario para la columna
-            header_len = len(col)
-            col_series_str = df_final[col].astype(str)
-            max_data_len = col_series_str.map(len).max() if not col_series_str.empty else 0
-            max_len = max(header_len, max_data_len) + 5
-
-            # --- Aplicar formato de fecha condicionalmente ---
-            if col in ['fecha_asignada', 'fecha_vigencia']:
-                current_data_format = date_format # Aplicar el formato de fecha
-            else:
-                current_data_format = data_format # Aplicar el formato de datos general
-
-            # APLICAR ANCHO Y EL FORMATO DE DATOS PREDETERMINADO (o de fecha) PARA LA COLUMNA
-            worksheet.set_column(i, i, max_len, current_data_format)
-
-            # SOBRESCRIBIR el formato del ENCABEZADO de esta columna con su formato específico
-            worksheet.write(0, i, col, header_format)
-
-        # --- Autofiltros a los encabezados ---
-        # La función autofilter toma (fila_inicio, columna_inicio, fila_fin, columna_fin)
-        num_columns = len(df_final.columns)
-        worksheet.autofilter(0, 0, 0, num_columns - 1)
-
-        writer.close()
-        print(f"\nListo, datos consolidados a excel: {outpath_xlsx}\n")
-
-        # abrir archivo / validar cambios
+        # Ordenar el DataFrame final para una salida consistente
         try:
-            os.startfile(outpath_xlsx)
-            print(f"\nArchivo abierto: {outpath_xlsx}, validar cambios\n")
-        except Exception:
-            pass # No se puede abrir en sistemas que no sean Windows
+            sort_cols = [col for col in ['#emp', 'fecha_asignada', 'nombre_completo'] if col in df_combined.columns]
+            if sort_cols:
+                df_combined = df_combined.sort_values(by=sort_cols, ascending=[True, False, True], ignore_index=True)
+        except Exception as sort_e:
+            print(f"Advertencia: No se pudo ordenar el DataFrame antes de guardar: {sort_e}")
 
-    except Exception as e:
-        print(f"Error al exportar a excel: {e}")
+        # Exportar a Excel o CSV
+        try:
+            if is_excel:
+                writer = pd.ExcelWriter(file_path, engine='xlsxwriter')
+                df_combined.to_excel(writer, sheet_name='Historial Constancias', index=False)
+                
+                workbook = writer.book
+                worksheet = writer.sheets['Historial Constancias']
 
-    # Exportacion a CSV
-    try:
-        df_final.to_csv(outpath_csv, index=False, encoding='utf-8')
-        print(f"\nListo, datos consolidados a csv: {outpath_csv}\n")
-    except Exception as e:
-        print(f"\nError al exportar a csv: {e}\n")
+                # Definir formatos de celda
+                header_format = workbook.add_format({
+                    'bold': True, 'font_size': 11, 'text_wrap': True,
+                    'valign': 'vcenter', 'border': 1, 'align' : 'center',
+                    'bg_color': '#9CEF00'
+                })
+                data_format = workbook.add_format({
+                    'font_size': 11, 'text_wrap': True, 'valign': 'top'
+                })
+                date_format = workbook.add_format({
+                    'font_size': 11, 'text_wrap': True, 'valign': 'top',
+                    'num_format': 'dd/mm/yyyy' # Formato de fecha
+                })
+
+                # Aplicar formatos y ancho de columnas
+                for i, col in enumerate(df_combined.columns):
+                    header_len = len(col)
+                    col_series_str = df_combined[col].astype(str)
+                    max_data_len = col_series_str.map(len).max() if not col_series_str.empty else 0
+                    max_len = max(header_len, max_data_len) + 5
+
+                    current_data_format = date_format if col in date_cols else data_format
+                    worksheet.set_column(i, i, max_len, current_data_format)
+                    worksheet.write(0, i, col, header_format)
+
+                # Aplicar autofiltros
+                num_columns = len(df_combined.columns)
+                worksheet.autofilter(0, 0, 0, num_columns - 1)
+                writer.close()
+                print(f"\nListo, datos consolidados a {file_type}: {file_path}\n")
+                
+                # Intentar abrir el archivo (solo en sistemas Windows)
+                try:
+                    os.startfile(file_path)
+                    print(f"Archivo abierto: {file_path}, validar cambios\n")
+                except Exception:
+                    pass # Ignorar error si no es Windows
+            else: # CSV
+                df_combined.to_csv(file_path, index=False, encoding='utf-8')
+                print(f"\nListo, datos consolidados a {file_type}: {file_path}\n")
+        except Exception as e:
+            print(f"\nError al exportar a {file_type}: {e}\n")
+
+    # Exportación a Excel
+    _process_and_save(df_final, outpath_xlsx, is_excel=True)
+
+    # Exportación a CSV
+    _process_and_save(df_final, outpath_csv, is_excel=False)
 
 def _cargar_set_registros_procesados(config: Config):
     """Carga el log de archivos procesados en un conjunto para busquedas eficientes."""
@@ -1514,7 +1577,7 @@ def main():
     organizar_archivos_pdf(df_final, config.outpath_onedrive_constancias_pdfs, config)
 
     # 8. Exportar resultados
-    exportar_resultados(df_final, config.outpath_xlsx, config.outpath_csv)
+    exportar_resultados(df_final, config.outpath_xlsx, config.outpath_csv, config)
 
     # Guardar el set único de archivos procesados a disco
     _guardar_registro_procesado_a_disco(config)

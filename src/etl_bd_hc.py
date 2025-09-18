@@ -7,17 +7,20 @@ CONFIG = {
     "PATHS": {
         "FILE_MAESTRO_HC": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\GESTION HUMANA\BASE DE DATOS.xlsx",
         "FILE_PUESTOS": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Tabla_Homologacion.xlsx",
-        "FILE_ENTRENAMIENTO": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Entrenamiento.xlsx",
+        # "FILE_ENTRENAMIENTO": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Entrenamiento.xlsx",
+        "FILE_ENTRENAMIENTO": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Registro_Entrenamiento.xlsm",
         "FILE_RELOJ_CHECADOR": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Faltas.csv",
         "FOLDER_RELOJ_CHECADOR": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Faltas",
         "FILE_COBERTURA": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Cobertura.xlsx",
+        "FILE_ROSTER": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Archivos_Entrenamiento\ROSTER",
         "FOLDER_OUTPATH": r".\data\processed",
         "FOLDER_OUTPATH_DASHBOARD": r".\data\processed\dashboard_tables"
     },
     "SHEETS_NAMES": {
         "MAESTRO_HC" : 'BASE DE DATOS',
         "BAJAS_HC": 'BAJAS',
-        "ENTRENAMIENTO_SHEETS": ['AVSEC', 'SMS', 'SAT'],
+        # "ENTRENAMIENTO_SHEETS": ['AVSEC', 'SMS', 'SAT'],
+        "ENTRENAMIENTO": 'Base',
         "ASISTENCIA_SHEETS": ['Asistencias', 'Asistencia SAT'],
         "COBERTURA_REQUERIDO": 'Requerido'
     },
@@ -35,6 +38,10 @@ CONFIG = {
 
 acentos_vocales = {
     'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'Á': 'A', 'É': 'E', 'Í': 'I', 'Ó': 'O', 'Ú': 'U', 'Ñ': 'N', 'ñ': 'n'
+}
+
+turnos_roster = {
+    '03at': 't1', '12at': 't2', '21at': 't3'
 }
 
 def normalizar_acentos(series, vocales_acentos=acentos_vocales):
@@ -57,12 +64,12 @@ def normalizar_acentos(series, vocales_acentos=acentos_vocales):
     return series_procesadas
 
 def cargar_transformar_excel(file_path, 
-                             sheet_name=None, engine='openpyxl'):
+                             sheet_name=None, engine='openpyxl', header=None):
     """
     Cargar un archivo de excel, convierte nombres de columnas en minusculas, elimina espacios al inicio/final y elimina columnas con nombres NaN.
     """
 
-    df = pd.read_excel(file_path, sheet_name=sheet_name, engine=engine)
+    df = pd.read_excel(file_path, sheet_name=sheet_name, engine=engine, header=header)
     df.columns = [normalizar_acentos(col) for col in df.columns]
     df.columns = df.columns.astype(str).str.lower().str.strip().str.replace(r'\s+', ' ', regex=True).str.replace(' ', '_', regex=False)
     df = df.loc[:, df.columns.notna()]
@@ -124,7 +131,7 @@ def run_hc_etl():
     # --- Dashboard
     # ---- Tabla 'hc_table' 
     # Cargar base de datos HC
-    df_hc = cargar_transformar_excel(CONFIG["PATHS"]["FILE_MAESTRO_HC"],sheet_name=CONFIG["SHEETS_NAMES"]["MAESTRO_HC"])
+    df_hc = cargar_transformar_excel(CONFIG["PATHS"]["FILE_MAESTRO_HC"],sheet_name=CONFIG["SHEETS_NAMES"]["MAESTRO_HC"],header=0)
 
     # limpieza de columnas de texto
     columnas_texto = ['id', 'paterno','materno', 'nombre', 'rfc', 'curp', 'telefono', 'estatus', 'area', 'puesto', 'novedades/comentarios']
@@ -191,36 +198,59 @@ def run_hc_etl():
 
     # --- Nexos
     # ---- Base 'Entrenamiento'
-    dfs = []
-    for sheet in CONFIG['SHEETS_NAMES']['ENTRENAMIENTO_SHEETS']:
-        df = cargar_transformar_excel(CONFIG['PATHS']['FILE_ENTRENAMIENTO'], sheet_name=sheet)
-        df = df.rename(columns={'vencimiento': 'l.d'})
-        df = df.rename(columns={'programacion': 'e.d'})
-        df['curso'] = sheet.strip()
-        text_cols = ['#emp', 'curso', 'status']
-        for col in text_cols:
-            if col in df.columns:
-                df[col] = limpiar_columna_texto(df[col], caracteres_a_eliminar=[' '])
-            else:
-                df[col] = pd.NA
-        date_cols = ['l.d', 'e.d']
-        for col in date_cols:
-            if col in df.columns:
-                df[col] = limpiar_columna_fecha(df[col])
-            else:
-                df[col] = pd.NaT
-        if '#emp' in df.columns:
-            df['#emp'] = limpiar_columna_id(df['#emp'])
-        else:
-            df['#emp'] = 0
-        df = df[['#emp', 'curso', 'l.d', 'status', 'e.d']]
-        dfs.append(df)
-    df_entrenamiento = pd.concat(dfs, ignore_index=True)
-    df_entrenamiento = df_entrenamiento.drop_duplicates().sort_values(['#emp', 'curso'])
-    df_entrenamiento = df_entrenamiento.rename(columns={'status': 'estatus_vigencia'})
-
+    # dfs = []
+    # for sheet in CONFIG['SHEETS_NAMES']['ENTRENAMIENTO_SHEETS']:
+    #     df = cargar_transformar_excel(CONFIG['PATHS']['FILE_ENTRENAMIENTO'], sheet_name=sheet)
+    #     df = df.rename(columns={'vencimiento': 'l.d'})
+    #     df = df.rename(columns={'programacion': 'e.d'})
+    #     df['curso'] = sheet.strip()
+    #     text_cols = ['#emp', 'curso', 'status']
+    #     for col in text_cols:
+    #         if col in df.columns:
+    #             df[col] = limpiar_columna_texto(df[col], caracteres_a_eliminar=[' '])
+    #         else:
+    #             df[col] = pd.NA
+    #     date_cols = ['l.d', 'e.d']
+    #     for col in date_cols:
+    #         if col in df.columns:
+    #             df[col] = limpiar_columna_fecha(df[col])
+    #         else:
+    #             df[col] = pd.NaT
+    #     if '#emp' in df.columns:
+    #         df['#emp'] = limpiar_columna_id(df['#emp'])
+    #     else:
+    #         df['#emp'] = 0
+    #     df = df[['#emp', 'curso', 'l.d', 'status', 'e.d']]
+    #     dfs.append(df)
+    # df_entrenamiento = pd.concat(dfs, ignore_index=True)
+    # df_entrenamiento = df_entrenamiento.drop_duplicates().sort_values(['#emp', 'curso'])
+    # df_entrenamiento = df_entrenamiento.rename(columns={'status': 'estatus_vigencia'})
     # df_entrenamiento.to_csv('prueba_entrenamiento.csv', encoding='utf-8', index=False)
 
+    # --- Nexos
+    # ---- Base 'Entrenamiento'
+    df_entrenamiento = cargar_transformar_excel(CONFIG['PATHS']['FILE_ENTRENAMIENTO'], sheet_name=CONFIG['SHEETS_NAMES']['ENTRENAMIENTO'], header=8)
+    text_cols = ['#emp', 'curso', 'estatus_vigencia']
+    for col in text_cols:
+        if col in df_entrenamiento.columns:
+            df_entrenamiento[col] = limpiar_columna_texto(df_entrenamiento[col])
+    df_entrenamiento['curso'] = df_entrenamiento['curso'].str.replace('SAT(Op)', 'SAT', regex=False)
+    df_entrenamiento = df_entrenamiento.rename(columns={'fecha_vigencia': 'l.d'})
+    df_entrenamiento = df_entrenamiento.rename(columns={'fecha_programada': 'e.d'})
+    date_cols = ['l.d', 'e.d']
+    for col in date_cols:
+        if col in df_entrenamiento.columns:
+            df_entrenamiento[col] = limpiar_columna_fecha(df_entrenamiento[col])
+        else:
+            df_entrenamiento[col] = pd.NaT
+    if '#emp' in df_entrenamiento.columns:
+        df_entrenamiento['#emp'] = limpiar_columna_id(df_entrenamiento['#emp'])
+    else:
+        df_entrenamiento['#emp'] = 0           
+    df_entrenamiento = df_entrenamiento[['#emp', 'curso', 'l.d', 'estatus_vigencia', 'e.d']]
+    df_entrenamiento = df_entrenamiento.drop_duplicates().sort_values(['#emp', 'curso'])
+
+    # df_entrenamiento.to_csv('prueba_entrenamiento.csv', encoding='utf-8', index=False)
 
     # -- Cursos Entrenamiento
     # ---- Tabla 'cursos_table'
@@ -235,16 +265,14 @@ def run_hc_etl():
     df_estatus_vigencia['id_estatus_vigencia'] = df_estatus_vigencia.index
     df_estatus_vigencia = df_estatus_vigencia[['id_estatus_vigencia', 'estatus_vigencia']]
 
-
     # --- Tabla Auxiliar
     # 'Puestos homologados'
-    df_puestos = cargar_transformar_excel(CONFIG['PATHS']['FILE_PUESTOS'], sheet_name='Hoja1')
+    df_puestos = cargar_transformar_excel(CONFIG['PATHS']['FILE_PUESTOS'], sheet_name='Hoja1',header=0)
     df_puestos.columns = df_puestos.columns.str.replace('ó', 'o', regex=False)
-    for col in df.columns:
+    for col in df_puestos.columns:
         if isinstance(col, str):
-            df[col] = limpiar_columna_texto(df[col])
+            df_puestos[col] = limpiar_columna_texto(df_puestos[col])
     df_puestos['posicion_vh'] = df_puestos['posicion_vh'].str.upper()
-        
 
     # Generar 'id_puesto'
     df_puestos_homologados = df_puestos[['cargo_homologado', 'area', 'horas_diarias']]
@@ -289,7 +317,7 @@ def run_hc_etl():
     # Recorrer sheets de 'asistencia', convertir en df, transformar y limpiar. Concatenar dfs, dividir 'AVSEC/SMS' y eliminar registros. Concatenar df final.
     dfs_asistencia = []
     for s in CONFIG['SHEETS_NAMES']['ASISTENCIA_SHEETS']:
-        df = cargar_transformar_excel(CONFIG['PATHS']['FILE_ENTRENAMIENTO'], sheet_name=s)
+        df = cargar_transformar_excel(CONFIG['PATHS']['FILE_ENTRENAMIENTO'], sheet_name=s, header=0)
         df.columns = df.columns.str.strip()
         for col in df:
             if col != 'fecha de curso':
@@ -307,9 +335,10 @@ def run_hc_etl():
     df_asistencia_sms['curso'] = 'SMS'
     df_asistencia = df_asistencia[df_asistencia['curso'] != 'AVSEC/SMS'].copy()
     df_asistencia = pd.concat([df_asistencia_avsec, df_asistencia_sms, df_asistencia], ignore_index=True)
+    df_asistencia = df_asistencia.sort_values(['#emp'])
 
     # df_entrenamiento.to_csv('prueba_entrenamiento.csv', encoding='utf-8', index=False)
-    # df_asistencia.to_csv('prueba_asistencia.csv', encoding='utf-8', index=False)
+    df_asistencia.to_csv('prueba_asistencia.csv', encoding='utf-8', index=False)
 
 
     # Merge: 'Entrenamiento', 'Asistencia'
@@ -319,6 +348,9 @@ def run_hc_etl():
         left_on=['#emp', 'curso'],
         right_on=['#emp', 'curso']
     )
+    df_entrenamiento_asistencia = df_entrenamiento_asistencia.sort_values(by='#emp', ascending=False)
+
+    df_entrenamiento_asistencia.to_csv('prueba_entrenamiento_asistencia.csv', encoding='utf-8', index=False)
 
     # Merge: 'df_entrenamiento_asistencia', 'Cursos'
     df_entrenamiento_asistencia_cursos = pd.merge(
@@ -370,7 +402,7 @@ def run_hc_etl():
     df_ausentismo['concepto'] = df_ausentismo['concepto'].str.title()
 
     # --- Dashboard: 'Cobertura'
-    df_cobertura = cargar_transformar_excel(CONFIG['PATHS']['FILE_COBERTURA'], sheet_name=CONFIG['SHEETS_NAMES']['COBERTURA_REQUERIDO'])
+    df_cobertura = cargar_transformar_excel(CONFIG['PATHS']['FILE_COBERTURA'], sheet_name=CONFIG['SHEETS_NAMES']['COBERTURA_REQUERIDO'], header=0)
     df_cobertura = df_cobertura.rename(columns={'año': 'ano'})
     for col in df_cobertura.columns:
         df_cobertura[col] = limpiar_columna_texto(df_cobertura[col])
@@ -388,6 +420,16 @@ def run_hc_etl():
                             right_on=['cargo_homologado'])
     df_cobertura = df_cobertura[['id_puesto', 'requerido', 'fecha']]
     df_cobertura = df_cobertura.rename(columns={'cargo': 'puesto'})
+
+    # Turnos: 'Roster'
+    # PDTE - Validar con Adriana
+    # df_roster = cargar_transformar_csv(CONFIG['PATHS']['FILE_ROSTER'], header=3, encoding='ansi')
+    # df_turnos = df_roster.iloc[:, [0, -1]]
+    # df_turnos 
+    # for c in df_turnos.columns():
+    #     df_roster[c] = limpiar_columna_texto(df_roster[c])
+    # for turno, abreviatura in df_turnos[]
+    
 
 
     # ---- Exportar archivos
