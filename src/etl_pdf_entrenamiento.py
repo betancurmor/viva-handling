@@ -973,7 +973,8 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         'OP-0011-25.pdf',
         'PRUDENCIO CAPACIDAD RTAR.pdf',
         'TTT 2024 GUERRERO DE LA GARZA FRANCISCO.pdf',
-        'TTT 2024 GONZALEZ ESCALANTE EDUARDO SILVANO.pdf'
+        'TTT 2024 GONZALEZ ESCALANTE EDUARDO SILVANO.pdf',
+        'AVSEC SALOMON CASTILLO ANA KAREN.pdf'
     ]
     df_filtrado = df_constancias[~df_constancias['nombre_archivo'].isin(archivos_expecificos_a_excluir)]
     eliminados_por_nombres_especificos = recuento_filas_actuales - len(df_filtrado)
@@ -1027,6 +1028,8 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('MONTREAL SALAS HUGO HUMBERTO', 'MONRREAL SALAS HUGO HUMBERTO', regex=False)   
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('ABELDAÑO LEAL REGINA SAORI', 'ALBELDAÑO LEAL REGINA SAORI', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('IBARRA TREVIÑO BRAYAN ARTURO', 'IBARRA TREVIO BRAYAN ARTURO', regex=False)
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('MICHELE ALFARO PALOMEQUE', 'MICHELLE ALFARO PALOMEQUE', regex=False)
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('KEVEIN ENRIQUE MAAS ANAYA', 'KEVIN ENRIQUE MAAS ANAYA', regex=False)
 
     # Modificacion de fecha manual por error en constancia.
     df_constancias.loc[

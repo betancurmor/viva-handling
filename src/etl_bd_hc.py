@@ -6,18 +6,18 @@ import unicodedata
 CONFIG = {
     "PATHS": {
         "FILE_MAESTRO_HC": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\GESTION HUMANA\BASE DE DATOS.xlsx",
+        "FILE_DATOS_ADICIONALES_HC": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Archivos_Entrenamiento\BASE DE DATOS_ADICIONAL.xlsx",
         "FILE_PUESTOS": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Tabla_Homologacion.xlsx",
-        # "FILE_ENTRENAMIENTO": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Entrenamiento.xlsx",
         "FILE_ENTRENAMIENTO": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Registro_Entrenamiento.xlsm",
-        "FILE_RELOJ_CHECADOR": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Faltas.csv",
-        "FOLDER_RELOJ_CHECADOR": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Faltas",
         "FILE_COBERTURA": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Cobertura.xlsx",
-        "FILE_ROSTER": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Archivos_Entrenamiento\ROSTER",
-        "FOLDER_OUTPATH": r".\data\processed",
+       "FOLDER_RELOJ_CHECADOR": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Faltas",
+        "FOLDER_ROSTER": r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\12. Compartida\1. Bryan\Roster",
+        "FOLDER_OUTPATH": r".\data\processed",        
         "FOLDER_OUTPATH_DASHBOARD": r".\data\processed\dashboard_tables"
     },
     "SHEETS_NAMES": {
         "MAESTRO_HC" : 'BASE DE DATOS',
+        "DATOS_ADICIONALES_HC": 'Datos',
         "BAJAS_HC": 'BAJAS',
         # "ENTRENAMIENTO_SHEETS": ['AVSEC', 'SMS', 'SAT'],
         "ENTRENAMIENTO": 'Base',
@@ -196,36 +196,14 @@ def run_hc_etl():
 
     df_bajas = df_bajas[['#emp', 'fecha_de_baja', 'motivo', 'causa']]
 
-    # --- Nexos
-    # ---- Base 'Entrenamiento'
-    # dfs = []
-    # for sheet in CONFIG['SHEETS_NAMES']['ENTRENAMIENTO_SHEETS']:
-    #     df = cargar_transformar_excel(CONFIG['PATHS']['FILE_ENTRENAMIENTO'], sheet_name=sheet)
-    #     df = df.rename(columns={'vencimiento': 'l.d'})
-    #     df = df.rename(columns={'programacion': 'e.d'})
-    #     df['curso'] = sheet.strip()
-    #     text_cols = ['#emp', 'curso', 'status']
-    #     for col in text_cols:
-    #         if col in df.columns:
-    #             df[col] = limpiar_columna_texto(df[col], caracteres_a_eliminar=[' '])
-    #         else:
-    #             df[col] = pd.NA
-    #     date_cols = ['l.d', 'e.d']
-    #     for col in date_cols:
-    #         if col in df.columns:
-    #             df[col] = limpiar_columna_fecha(df[col])
-    #         else:
-    #             df[col] = pd.NaT
-    #     if '#emp' in df.columns:
-    #         df['#emp'] = limpiar_columna_id(df['#emp'])
-    #     else:
-    #         df['#emp'] = 0
-    #     df = df[['#emp', 'curso', 'l.d', 'status', 'e.d']]
-    #     dfs.append(df)
-    # df_entrenamiento = pd.concat(dfs, ignore_index=True)
-    # df_entrenamiento = df_entrenamiento.drop_duplicates().sort_values(['#emp', 'curso'])
-    # df_entrenamiento = df_entrenamiento.rename(columns={'status': 'estatus_vigencia'})
-    # df_entrenamiento.to_csv('prueba_entrenamiento.csv', encoding='utf-8', index=False)
+    # Datos Adicionales HC
+    df_datos_adicionales_hc = cargar_transformar_excel(CONFIG['PATHS']['FILE_DATOS_ADICIONALES_HC'], sheet_name=CONFIG['SHEETS_NAMES']['DATOS_ADICIONALES_HC'], header=0)
+    df_datos_adicionales_hc = df_datos_adicionales_hc[['#emp', 'direccion', 'correo_electronico']]
+    cols_text= ['#emp', 'correo_electronico']
+    for col in cols_text:
+        if col in df_datos_adicionales_hc.columns:
+         df_datos_adicionales_hc[col] = limpiar_columna_texto(df_datos_adicionales_hc[col], caracteres_a_eliminar= ' ')
+    df_datos_adicionales_hc['#emp'] = limpiar_columna_id(df_datos_adicionales_hc['#emp'])
 
     # --- Nexos
     # ---- Base 'Entrenamiento'
@@ -233,7 +211,7 @@ def run_hc_etl():
     text_cols = ['#emp', 'curso', 'estatus_vigencia']
     for col in text_cols:
         if col in df_entrenamiento.columns:
-            df_entrenamiento[col] = limpiar_columna_texto(df_entrenamiento[col])
+            df_entrenamiento[col] = limpiar_columna_texto(df_entrenamiento[col], caracteres_a_eliminar= ' ')
     df_entrenamiento['curso'] = df_entrenamiento['curso'].str.replace('SAT(Op)', 'SAT', regex=False)
     df_entrenamiento = df_entrenamiento.rename(columns={'fecha_vigencia': 'l.d'})
     df_entrenamiento = df_entrenamiento.rename(columns={'fecha_programada': 'e.d'})
@@ -249,8 +227,6 @@ def run_hc_etl():
         df_entrenamiento['#emp'] = 0           
     df_entrenamiento = df_entrenamiento[['#emp', 'curso', 'l.d', 'estatus_vigencia', 'e.d']]
     df_entrenamiento = df_entrenamiento.drop_duplicates().sort_values(['#emp', 'curso'])
-
-    # df_entrenamiento.to_csv('prueba_entrenamiento.csv', encoding='utf-8', index=False)
 
     # -- Cursos Entrenamiento
     # ---- Tabla 'cursos_table'
@@ -280,9 +256,53 @@ def run_hc_etl():
     df_puestos_homologados['id_puesto'] = df_puestos_homologados.index+1
     df_puestos_homologados = df_puestos_homologados[['id_puesto', 'cargo_homologado', 'area', 'horas_diarias']]
 
-    # Merge: 'df_hc', 'df_puestos'
-    df_hc_puente = pd.merge(
+    # # Turnos: 'Roster'
+    # # PDTE - Validar con Adriana
+    try:
+        archivos = [
+            f for f in os.listdir(CONFIG['PATHS']['FOLDER_ROSTER'])
+            if f.endswith('.csv')
+        ]
+    except Exception as e:
+        print(f"\nError: Revisa la carpeta 'Archivos_Entrenamiento', no se encontraron archivos validos.")
+
+    dfs = []
+    for a in archivos:
+        ruta = os.path.join(CONFIG['PATHS']['FOLDER_ROSTER'], a)
+        nombre_archivo = os.path.splitext(a)[0]
+        nombre_archivo = nombre_archivo.replace(' ', '').lower()  # Elimina espacios y convierte a minusculas
+        mes_archivo = nombre_archivo.split('_')[1]  # Asumiendo formato 'Roster_Mes_Año.csv'
+        año_archivo = nombre_archivo.split('_')[2]
+        fecha_archivo = '01/' + mes_archivo + '/' + año_archivo
+        fecha_limpia = limpiar_columna_fecha(fecha_archivo)
+        df = cargar_transformar_csv(ruta, header=3, encoding='ansi')
+
+        # FALTA AÑADIR COLUMNA FECHA AL DF, ADICIONALMENTE COMPARAR FECHA PARA OBTENER ULTIMO ROSTER (DIA-HOY)
+        # df['mes'] = mes_archivo
+        dfs.append(df)
+    df_roster = pd.concat(dfs, ignore_index= True)
+    df_roster = df_roster.rename(columns={'id': '#emp'})
+    df_turnos = df_roster.iloc[:, [0] + list(range(-8, -1))] # Selecciona la primera columna y las ultimas 7 columnas   
+
+    for c in df_turnos.columns:
+        df_turnos[c] = limpiar_columna_texto(df_turnos[c], caracteres_a_eliminar= ' ')
+    df_turnos['#emp'] = limpiar_columna_id(df_turnos['#emp'])
+
+    df_turnos.to_csv('prueba_turnos.csv',index=False, encoding= 'utf-8')
+    # for turno, abreviatura in df_turnos[]
+
+    # Merge: 'df_hc', 'df_datos_adicionales_hc'
+    df_adicionales_hc = pd.merge(
         df_hc,
+        df_datos_adicionales_hc[['#emp', 'direccion', 'correo_electronico']],
+        left_on=['#emp'],
+        right_on=['#emp'],
+        how='left'
+    )
+
+    # Merge: 'df_adicionales_hc', 'df_puestos'
+    df_hc_puente = pd.merge(
+        df_adicionales_hc,
         df_puestos[['posicion_vh', 'cargo_homologado']],
         left_on=['puesto'],
         right_on=['posicion_vh'],
@@ -308,9 +328,7 @@ def run_hc_etl():
         print(f"\nAdvertencia: se encontraron inc tenemos casos sin coincidencia de 'cargo_homologado': {len(cargo_homologado_nulos)}\n")
         print(cargo_homologado_nulos)
 
-    # df_hc
-
-    df_hc = df_hc_temp[['#emp', 'id_puesto', 'nombre_completo', 'paterno', 'materno', 'nombre', 'rfc', 'curp', 'telefono', 'estatus', 'fecha_alta', 'fecha_baja', 'fecha_antiguedad', 'fecha_nacimiento', 'novedades_comentarios']]
+    df_hc = df_hc_temp[['#emp', 'id_puesto', 'nombre_completo', 'paterno', 'materno', 'nombre', 'rfc', 'curp', 'telefono', 'direccion', 'correo_electronico', 'estatus', 'fecha_alta', 'fecha_baja', 'fecha_antiguedad', 'fecha_nacimiento', 'novedades_comentarios']]
 
     # --- Tabla 'Asistencia Entrenamiento'
     # ---- sheets: AVSEC, SMS, SAT
@@ -337,10 +355,6 @@ def run_hc_etl():
     df_asistencia = pd.concat([df_asistencia_avsec, df_asistencia_sms, df_asistencia], ignore_index=True)
     df_asistencia = df_asistencia.sort_values(['#emp'])
 
-    # df_entrenamiento.to_csv('prueba_entrenamiento.csv', encoding='utf-8', index=False)
-    df_asistencia.to_csv('prueba_asistencia.csv', encoding='utf-8', index=False)
-
-
     # Merge: 'Entrenamiento', 'Asistencia'
     df_entrenamiento_asistencia = pd.merge(
         df_entrenamiento,
@@ -349,8 +363,6 @@ def run_hc_etl():
         right_on=['#emp', 'curso']
     )
     df_entrenamiento_asistencia = df_entrenamiento_asistencia.sort_values(by='#emp', ascending=False)
-
-    df_entrenamiento_asistencia.to_csv('prueba_entrenamiento_asistencia.csv', encoding='utf-8', index=False)
 
     # Merge: 'df_entrenamiento_asistencia', 'Cursos'
     df_entrenamiento_asistencia_cursos = pd.merge(
@@ -420,17 +432,6 @@ def run_hc_etl():
                             right_on=['cargo_homologado'])
     df_cobertura = df_cobertura[['id_puesto', 'requerido', 'fecha']]
     df_cobertura = df_cobertura.rename(columns={'cargo': 'puesto'})
-
-    # Turnos: 'Roster'
-    # PDTE - Validar con Adriana
-    # df_roster = cargar_transformar_csv(CONFIG['PATHS']['FILE_ROSTER'], header=3, encoding='ansi')
-    # df_turnos = df_roster.iloc[:, [0, -1]]
-    # df_turnos 
-    # for c in df_turnos.columns():
-    #     df_roster[c] = limpiar_columna_texto(df_roster[c])
-    # for turno, abreviatura in df_turnos[]
-    
-
 
     # ---- Exportar archivos
     ruta_csv_hechos = os.path.join(CONFIG["PATHS"]["FOLDER_OUTPATH_DASHBOARD"], CONFIG["OUTPATHS"]['FACT_TABLE'])
