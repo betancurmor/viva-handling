@@ -21,6 +21,7 @@ CONFIG = {
         "BAJAS_HC": 'BAJAS',
         # "ENTRENAMIENTO_SHEETS": ['AVSEC', 'SMS', 'SAT'],
         "ENTRENAMIENTO": 'Base',
+        "PROGRAMACION": 'Programacion',
         "ASISTENCIA_SHEETS": ['Asistencias', 'Asistencia SAT'],
         "COBERTURA_REQUERIDO": 'Requerido'
     },
@@ -174,7 +175,7 @@ def run_hc_etl():
 
     # --- Dashboar 'Ausentismo'
     # ---- Tabla 'hc_bajas_table'
-    df_bajas = cargar_transformar_excel(CONFIG["PATHS"]["FILE_MAESTRO_HC"], sheet_name=CONFIG["SHEETS_NAMES"]["BAJAS_HC"])
+    df_bajas = cargar_transformar_excel(CONFIG["PATHS"]["FILE_MAESTRO_HC"], sheet_name=CONFIG["SHEETS_NAMES"]["BAJAS_HC"], header=0)
 
     columnas_texto = ['id', 'motivo', 'causa']
     for col in columnas_texto:
@@ -193,8 +194,8 @@ def run_hc_etl():
         df_bajas['fecha_de_baja'] = pd.NaT
 
     df_bajas['#emp'] = limpiar_columna_id(df_bajas['id'], caracteres_a_eliminar=['H', 'P'])
-
     df_bajas = df_bajas[['#emp', 'fecha_de_baja', 'motivo', 'causa']]
+    df_bajas = df_bajas.drop_duplicates().sort_values(by='#emp', ascending=False)
 
     # Datos Adicionales HC
     df_datos_adicionales_hc = cargar_transformar_excel(CONFIG['PATHS']['FILE_DATOS_ADICIONALES_HC'], sheet_name=CONFIG['SHEETS_NAMES']['DATOS_ADICIONALES_HC'], header=0)
@@ -212,10 +213,10 @@ def run_hc_etl():
     for col in text_cols:
         if col in df_entrenamiento.columns:
             df_entrenamiento[col] = limpiar_columna_texto(df_entrenamiento[col], caracteres_a_eliminar= ' ')
-    df_entrenamiento['curso'] = df_entrenamiento['curso'].str.replace('SAT(Op)', 'SAT', regex=False)
+    # df_entrenamiento['curso'] = df_entrenamiento['curso'].str.replace('SAT(Op)', 'SAT', regex=False)
     df_entrenamiento = df_entrenamiento.rename(columns={'fecha_vigencia': 'l.d'})
     df_entrenamiento = df_entrenamiento.rename(columns={'fecha_programada': 'e.d'})
-    date_cols = ['l.d', 'e.d']
+    date_cols = ['fecha_curso', 'l.d', 'e.d']
     for col in date_cols:
         if col in df_entrenamiento.columns:
             df_entrenamiento[col] = limpiar_columna_fecha(df_entrenamiento[col])
@@ -225,7 +226,7 @@ def run_hc_etl():
         df_entrenamiento['#emp'] = limpiar_columna_id(df_entrenamiento['#emp'])
     else:
         df_entrenamiento['#emp'] = 0           
-    df_entrenamiento = df_entrenamiento[['#emp', 'curso', 'l.d', 'estatus_vigencia', 'e.d']]
+    df_entrenamiento = df_entrenamiento[['#emp', 'curso', 'fecha_curso', 'l.d', 'estatus_vigencia', 'e.d']]
     df_entrenamiento = df_entrenamiento.drop_duplicates().sort_values(['#emp', 'curso'])
 
     # -- Cursos Entrenamiento
@@ -288,9 +289,6 @@ def run_hc_etl():
         df_turnos[c] = limpiar_columna_texto(df_turnos[c], caracteres_a_eliminar= ' ')
     df_turnos['#emp'] = limpiar_columna_id(df_turnos['#emp'])
 
-    df_turnos.to_csv('prueba_turnos.csv',index=False, encoding= 'utf-8')
-    # for turno, abreviatura in df_turnos[]
-
     # Merge: 'df_hc', 'df_datos_adicionales_hc'
     df_adicionales_hc = pd.merge(
         df_hc,
@@ -331,37 +329,26 @@ def run_hc_etl():
     df_hc = df_hc_temp[['#emp', 'id_puesto', 'nombre_completo', 'paterno', 'materno', 'nombre', 'rfc', 'curp', 'telefono', 'direccion', 'correo_electronico', 'estatus', 'fecha_alta', 'fecha_baja', 'fecha_antiguedad', 'fecha_nacimiento', 'novedades_comentarios']]
 
     # --- Tabla 'Asistencia Entrenamiento'
-    # ---- sheets: AVSEC, SMS, SAT
-    # Recorrer sheets de 'asistencia', convertir en df, transformar y limpiar. Concatenar dfs, dividir 'AVSEC/SMS' y eliminar registros. Concatenar df final.
-    dfs_asistencia = []
-    for s in CONFIG['SHEETS_NAMES']['ASISTENCIA_SHEETS']:
-        df = cargar_transformar_excel(CONFIG['PATHS']['FILE_ENTRENAMIENTO'], sheet_name=s, header=0)
-        df.columns = df.columns.str.strip()
-        for col in df:
-            if col != 'fecha de curso':
-                df[col] = limpiar_columna_texto(df[col])
-            else:
-                df[col] = limpiar_columna_fecha(df[col])
-        df['curso'] = df['curso'].str.replace(r'\s*', '', regex=True)
-        df['#emp'] = limpiar_columna_id(df['#emp'])
-        dfs_asistencia.append(df)
-    df_asistencia = pd.concat(dfs_asistencia, ignore_index=True)
-    df_asistencia_temp = df_asistencia[df_asistencia['curso'] == 'AVSEC/SMS'].copy()
-    df_asistencia_avsec = df_asistencia_temp.copy()
-    df_asistencia_avsec['curso'] = 'AVSEC'
-    df_asistencia_sms = df_asistencia_temp.copy()
-    df_asistencia_sms['curso'] = 'SMS'
-    df_asistencia = df_asistencia[df_asistencia['curso'] != 'AVSEC/SMS'].copy()
-    df_asistencia = pd.concat([df_asistencia_avsec, df_asistencia_sms, df_asistencia], ignore_index=True)
-    df_asistencia = df_asistencia.sort_values(['#emp'])
+    # --- Nueva logica para el registro de asistencia
+    df_asistencia = cargar_transformar_excel(CONFIG['PATHS']['FILE_ENTRENAMIENTO'], sheet_name=CONFIG['SHEETS_NAMES']['PROGRAMACION'], header=5)
+    df_asistencia = df_asistencia[['#emp', 'curso', 'fecha_programada', 'asistencia', 'motivo']]
+    text_cols = ['#emp', 'curso', 'asistencia', 'motivo']
+    for col in text_cols:
+        if col in df_asistencia.columns:
+            df_asistencia[col] = limpiar_columna_texto(df_asistencia[col])
+    df_asistencia['#emp'] = limpiar_columna_id(df_asistencia['#emp'])
+    df_asistencia['fecha_programada'] = limpiar_columna_fecha(df_asistencia['fecha_programada'])
+    df_asistencia = df_asistencia.drop_duplicates().dropna(how='all').sort_values(by='#emp', ascending=False)
+    df_asistencia = df_asistencia[df_asistencia['#emp'] != 0]
 
-    # Merge: 'Entrenamiento', 'Asistencia'
+    # Merge: 'df_entrenamiento', 'df_asistencia'
     df_entrenamiento_asistencia = pd.merge(
         df_entrenamiento,
-        df_asistencia[['#emp', 'curso', 'fecha_de_curso', 'asistencia', 'motivo']],
-        left_on=['#emp', 'curso'],
-        right_on=['#emp', 'curso']
+        df_asistencia[['#emp', 'curso', 'fecha_programada', 'asistencia', 'motivo']],
+        left_on=['#emp', 'curso', 'e.d'],
+        right_on=['#emp', 'curso', 'fecha_programada']
     )
+    df_entrenamiento_asistencia = df_entrenamiento_asistencia[['#emp', 'curso', 'fecha_curso', 'l.d', 'estatus_vigencia', 'e.d', 'asistencia', 'motivo']]
     df_entrenamiento_asistencia = df_entrenamiento_asistencia.sort_values(by='#emp', ascending=False)
 
     # Merge: 'df_entrenamiento_asistencia', 'Cursos'
@@ -379,7 +366,8 @@ def run_hc_etl():
         left_on=['estatus_vigencia'],
         right_on=['estatus_vigencia']
     )
-    df_hechos = df_entrenamiento_asistencia_cursos_status[['#emp', 'id_curso', 'id_estatus_vigencia', 'l.d', 'e.d', 'fecha_de_curso', 'asistencia', 'motivo']]
+    df_hechos = df_entrenamiento_asistencia_cursos_status[['#emp', 'id_curso', 'id_estatus_vigencia', 'l.d', 'e.d', 'fecha_curso', 'asistencia', 'motivo']]
+    df_hechos = df_hechos.sort_values(by=['#emp', 'id_curso']).reset_index(drop=True)
 
     # --- Dashboard: 'Ausentismo'
     # Iterar entre cada archivo individual dentro de la carpete 'Faltas'
