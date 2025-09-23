@@ -2,14 +2,21 @@ import sys
 import os
 from datetime import datetime
 
-# Asegúrate de que el directorio actual esté en el PATH para importar los módulos
-# Esto es útil si el script se ejecuta desde un scheduler o una ubicación diferente
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+# Obtener la ruta de la carpeta del script actual (src/)
+script_dir =os.path.abspath(os.path.dirname(__file__))
+# Obtener la ruta de la carpeta raíz del proyecto (Viva-handling/)
+project_root = os.path.dirname(script_dir)
 
-from config import Config
-from etl_bd_hc import run_hc_etl
-from generador_lista_no_excluidos import generador_lista_archivos_no_excluidos
-from etl_pdf_entrenamiento import run_pdf_etl
+# Añadir la carpeta raíz del proyecto a sys.path.
+# Esto permite que Python encuentre el paquete 'src' cuando se importa como 'src.modulo'.
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Ahora, usa importaciones ABSOLUTAS referenciando el paquete 'src'
+from src.config import Config
+from src.etl_bd_hc import run_hc_etl
+from src.generador_lista_no_excluidos import generador_lista_archivos_no_excluidos
+from src.etl_pdf_entrenamiento import run_pdf_etl
 
 def main_orchestrator():
     """

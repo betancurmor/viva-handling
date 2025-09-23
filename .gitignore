@@ -6,4 +6,7 @@ data/
 *.log
 ant
 Certificados Entrenamiento Viva Handling
-temp_split_pdfs
+temp_split_pdfs/
+build/
+dist/
+*.spec

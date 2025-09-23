@@ -73,7 +73,8 @@ class Config:
         self.outpath_list_new_non_excluded_pdfs = os.path.join(self.data_processed_folder, self.pdf_etl_output_filenames['LIST_NEW_NON_EXCLUDED_PDFS'])
         self.outpath_xlsx_constancias_sin_emp = os.path.join(self.data_processed_folder, self.pdf_etl_output_filenames['XLSX_CONSTANCIAS_SIN_EMP'])
         self.outpath_csv_constancias_sin_emp = os.path.join(self.data_processed_folder, self.pdf_etl_output_filenames['CSV_CONSTANCIAS_SIN_EMP'])
-
+        self.processed_files_set_in_memory = set()
+        
         # Carpeta compartida de OneDrive para certificados (donde se organizan los PDFs finales)
         self.onedrive_certs_base = os.path.join(self.onedrive_shared_base_path, 'Certificados Entrenamiento Viva Handling - Certficados')
         self.onedrive_certs_active = os.path.join(self.onedrive_certs_base, '2.Constancias_actual')

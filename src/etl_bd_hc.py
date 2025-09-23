@@ -1,11 +1,11 @@
 import pandas as pd
 import os
 import unicodedata
-from config import Config # Importa la clase Config centralizada
+import warnings
 
-# Las siguientes variables globales se eliminan ya que ahora están en la clase Config
-# acentos_vocales = { ... }
-# turnos_roster = { ... }
+from .config import Config
+
+warnings.filterwarnings('ignore', category=UserWarning)
 
 def normalizar_acentos(series, vocales_acentos_map): # Ahora requiere el mapa de acentos de Config
     """
@@ -90,7 +90,7 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
     # --- Dashboard
     # ---- Tabla 'hc_table'
     # Cargar base de datos HC
-    df_hc = cargar_transformar_excel(config.hc_etl_files["FILE_MAESTRO_HC"], config, sheet_name=config.hc_etl_sheets_names["MAESTRO_HC"], header=0)
+    df_hc = cargar_transformar_excel(config.hc_etl_files["FILE_MAESTRO_HC"], config, sheet_name=config.hc_etl_sheets_names["MAESTRO_HC"], header=0).copy()
 
     # limpieza de columnas de texto
     columnas_texto = ['id', 'paterno','materno', 'nombre', 'rfc', 'curp', 'telefono', 'estatus', 'area', 'puesto', 'novedades/comentarios']
@@ -122,23 +122,23 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
             df_hc[col] = pd.NaT
 
     # Transformar y reenombrar columnas
-    df_hc['puesto'] = df_hc['puesto'].str.upper()
+    df_hc.loc[:, 'puesto'] = df_hc['puesto'].str.upper()
     df_hc = df_hc.rename(columns={'novedades_/_comentarios': 'novedades_comentarios'})
     df_hc = df_hc.rename(columns={'fechaalta': 'fecha_alta'})
 
-    df_hc['nombre_completo'] = df_hc['nombre_completo'].replace('REYES nan ALEJANDRO', 'REYES ALEJANDRO', regex=False)
+    df_hc.loc[:, 'nombre_completo'] = df_hc['nombre_completo'].replace('REYES nan ALEJANDRO', 'REYES ALEJANDRO', regex=False)
 
     # Definir orden de columnas
     df_hc = df_hc[['#emp', 'nombre_completo', 'paterno','materno', 'nombre', 'rfc', 'curp', 'telefono', 'estatus','puesto', 'fecha_alta', 'fecha_antiguedad', 'fecha_baja', 'fecha_nacimiento', 'novedades_comentarios']]
 
     # --- Dashboar 'Ausentismo'
     # ---- Tabla 'hc_bajas_table'
-    df_bajas = cargar_transformar_excel(config.hc_etl_files["FILE_MAESTRO_HC"], config, sheet_name=config.hc_etl_sheets_names["BAJAS_HC"], header=0)
+    df_bajas = cargar_transformar_excel(config.hc_etl_files["FILE_MAESTRO_HC"], config, sheet_name=config.hc_etl_sheets_names["BAJAS_HC"], header=0).copy()
 
     columnas_texto = ['id', 'motivo', 'causa']
     for col in columnas_texto:
         if col in df_bajas:
-            df_bajas[col] = limpiar_columna_texto(df_bajas[col])
+            df_bajas.loc[:, col] = limpiar_columna_texto(df_bajas[col])
         else:
             df_bajas[col] = ''
         if col in ['motivo', 'causa']:
@@ -156,7 +156,7 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
     df_bajas = df_bajas.drop_duplicates().sort_values(by='#emp', ascending=False)
 
     # Datos Adicionales HC
-    df_datos_adicionales_hc = cargar_transformar_excel(config.hc_etl_files['FILE_DATOS_ADICIONALES_HC'], config, sheet_name=config.hc_etl_sheets_names['DATOS_ADICIONALES_HC'], header=0)
+    df_datos_adicionales_hc = cargar_transformar_excel(config.hc_etl_files['FILE_DATOS_ADICIONALES_HC'], config, sheet_name=config.hc_etl_sheets_names['DATOS_ADICIONALES_HC'], header=0).copy()
     df_datos_adicionales_hc = df_datos_adicionales_hc[['#emp', 'direccion', 'correo_electronico']]
     cols_text= ['#emp', 'correo_electronico']
     for col in cols_text:
@@ -166,7 +166,7 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
 
     # --- Nexos
     # ---- Base 'Entrenamiento'
-    df_entrenamiento = cargar_transformar_excel(config.hc_etl_files['FILE_ENTRENAMIENTO'], config, sheet_name=config.hc_etl_sheets_names['ENTRENAMIENTO'], header=8)
+    df_entrenamiento = cargar_transformar_excel(config.hc_etl_files['FILE_ENTRENAMIENTO'], config, sheet_name=config.hc_etl_sheets_names['ENTRENAMIENTO'], header=8).copy()
     text_cols = ['#emp', 'curso', 'estatus_vigencia']
     for col in text_cols:
         if col in df_entrenamiento.columns:
@@ -202,7 +202,7 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
 
     # --- Tabla Auxiliar
     # 'Puestos homologados'
-    df_puestos = cargar_transformar_excel(config.hc_etl_files['FILE_PUESTOS'], config, sheet_name='Hoja1',header=0)
+    df_puestos = cargar_transformar_excel(config.hc_etl_files['FILE_PUESTOS'], config, sheet_name='Hoja1',header=0).copy()
     df_puestos.columns = df_puestos.columns.str.replace('ó', 'o', regex=False)
     for col in df_puestos.columns:
         if isinstance(col, str):
@@ -235,7 +235,7 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
         año_archivo = nombre_archivo.split('_')[2]
         fecha_archivo = '01/' + mes_archivo + '/' + año_archivo
         fecha_limpia = limpiar_columna_fecha(fecha_archivo)
-        df = cargar_transformar_csv(ruta, config, header=3, encoding='ansi') # Pasa el objeto config a la función
+        df = cargar_transformar_csv(ruta, config, header=3, encoding='ansi').copy() # Pasa el objeto config a la función
         # df['mes'] = mes_archivo # Esta línea estaba comentada en tu original
         dfs.append(df)
     df_roster = pd.concat(dfs, ignore_index= True)
@@ -243,8 +243,9 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
     df_turnos = df_roster.iloc[:, [0] + list(range(-8, -1))] # Selecciona la primera columna y las ultimas 7 columnas
 
     for c in df_turnos.columns:
-        df_turnos[c] = limpiar_columna_texto(df_turnos[c], caracteres_a_eliminar= ' ')
-    df_turnos['#emp'] = limpiar_columna_id(df_turnos['#emp'])
+        if c != '#emp':
+            df_turnos.loc[:, c] = limpiar_columna_texto(df_turnos[c], caracteres_a_eliminar= ' ')
+    df_turnos.loc[:, '#emp'] = limpiar_columna_id(df_turnos['#emp'])
 
     # Merge: 'df_hc', 'df_datos_adicionales_hc'
     df_adicionales_hc = pd.merge(
@@ -287,7 +288,7 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
 
     # --- Tabla 'Asistencia Entrenamiento'
     # --- Nueva logica para el registro de asistencia
-    df_asistencia = cargar_transformar_excel(config.hc_etl_files['FILE_ENTRENAMIENTO'], config, sheet_name=config.hc_etl_sheets_names['PROGRAMACION'], header=5)
+    df_asistencia = cargar_transformar_excel(config.hc_etl_files['FILE_ENTRENAMIENTO'], config, sheet_name=config.hc_etl_sheets_names['PROGRAMACION'], header=5).copy()
     df_asistencia = df_asistencia[['#emp', 'curso', 'fecha_programada', 'asistencia', 'motivo']]
     text_cols = ['#emp', 'curso', 'asistencia', 'motivo']
     for col in text_cols:
@@ -340,7 +341,7 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
     dfs = []
     for a in archivos:
         ruta = os.path.join(config.hc_etl_folders['FOLDER_RELOJ_CHECADOR'], a) # Usa config.hc_etl_folders
-        df = cargar_transformar_csv(ruta, config, header=3, encoding='ansi') # Pasa el objeto config a la función
+        df = cargar_transformar_csv(ruta, config, header=3, encoding='ansi').copy() # Pasa el objeto config a la función
         dfs.append(df)
     df_ausentismo = pd.concat(dfs, ignore_index=True)
     text_cols = ['trabajador', 'clave', 'concepto']
@@ -360,7 +361,7 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
     df_ausentismo['concepto'] = df_ausentismo['concepto'].str.title()
 
     # --- Dashboard: 'Cobertura'
-    df_cobertura = cargar_transformar_excel(config.hc_etl_files['FILE_COBERTURA'], config, sheet_name=config.hc_etl_sheets_names['COBERTURA_REQUERIDO'], header=0)
+    df_cobertura = cargar_transformar_excel(config.hc_etl_files['FILE_COBERTURA'], config, sheet_name=config.hc_etl_sheets_names['COBERTURA_REQUERIDO'], header=0).copy()
     df_cobertura = df_cobertura.rename(columns={'año': 'ano'})
     for col in df_cobertura.columns:
         df_cobertura[col] = limpiar_columna_texto(df_cobertura[col])

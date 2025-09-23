@@ -4,16 +4,13 @@ import time
 import fitz
 import re
 import pandas as pd
-from datetime import datetime
 import shutil
 import unicodedata
 import numpy as np
+from datetime import datetime
 
-from config import Config # Importa la clase Config centralizada
-from generador_lista_no_excluidos import _cargar_set_registros_procesados
-
-# Las definiciones de rutas base de usuario, onedrive_org_name, onedrive_shared_base_path
-# y la clase Config se eliminan de aquí, ya que se manejan en config.py.
+from .config import Config
+from .generador_lista_no_excluidos import _cargar_set_registros_procesados
 
 def _añadir_set_procesado_en_memoria(file_path: str, config: Config):
     """
@@ -1276,7 +1273,7 @@ def run_pdf_etl(config: Config):
     Función principal que orquesta el proceso de ETL de las constancias.
     """
     print("\n--- INICIANDO ETL DE CONSTANCIAS PDF ---")
-    _cargar_set_registros_procesados(config.outpath_processed_files_log) # Carga el log de archivos procesados en memoria
+    config.processed_files_set_in_memory = _cargar_set_registros_procesados(config.outpath_processed_files_log) # Carga el log de archivos procesados en memoria
 
     # Limpiar la carpeta temporal al inicio de la ejecución
     if os.path.exists(config.temp_split_pdfs_folder):

@@ -1,7 +1,8 @@
 import os
+import fitz
 from datetime import datetime
-from config import Config # Importa la clase Config centralizada
-import fitz # Se importa fitz directamente
+
+from .config import Config
 
 # --- 1. FUNCIÓN CARGAR SET REGISTROS(log) PROCESADOS ---
 def _cargar_set_registros_procesados(log_file_path):
@@ -38,7 +39,7 @@ def generador_lista_archivos_no_excluidos(config: Config): # La función ahora a
     print("\n[SCRIPT NO DIARIO] Iniciando búsqueda de archivos NO excluidos...\n")
 
     # Cargar el log de archivos ya procesados una sola vez al inicio
-    set_archivos_procesados = _cargar_set_registros_procesados(config.outpath_processed_files_log) # Usa config.outpath_processed_files_log
+    config.processed_files_set_in_memory = _cargar_set_registros_procesados(config.outpath_processed_files_log)
 
     for source_folder in config.source_folders_pdfs: # Usa config.source_folders_pdfs
         if not os.path.exists(source_folder):
@@ -123,7 +124,7 @@ def generador_lista_archivos_no_excluidos(config: Config): # La función ahora a
                 if is_file_excluded:
                     continue
 
-                if full_pdf_path in set_archivos_procesados:
+                if full_pdf_path in config.processed_files_set_in_memory:
                     total_pdfs_ya_procesados += 1
                     continue
 
