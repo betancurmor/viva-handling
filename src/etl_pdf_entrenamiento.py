@@ -1,124 +1,19 @@
-import os # manejo de paths
-import stat # proporciona constantes y funciones para interpretar los resultados de llamadas al sistema
+import os
+import stat
 import time
-import fitz # manejo y extraccion de texto(pdf)
-import re # uso de regular expretion
+import fitz
+import re
 import pandas as pd
-from datetime import datetime # uso de tiempos
-import shutil # copiar archivos / pegar archivos
-import unicodedata # manejo y transformacion de tipo de texto
+from datetime import datetime
+import shutil
+import unicodedata
 import numpy as np
 
-class Config:
-    """
-    Clase para centralizar y gestionar todas las configuraciones y rutas ETL. 
-    """
-    def __init__(self):
-        """
-        Inicializa los atributos de configuracion
-        """
-        # Nombres de outfiles
-        self.nombre_archivo_xlsx = 'datos_constancias.xlsx'
-        self.nombre_archivo_csv = 'datos_constancias.csv'
-        self.nombre_archivo_registro_archivos_procesados = 'registro_archivos_procesados.txt'
-        # Nombre del archivo que contendrá las rutas de los PDFs NUEVOS no excluidos
-        self.nombre_archivo_lista_pdfs_nuevos_no_excluidos = 'lista_pdfs_nuevos_no_excluidos.txt'
+from config import Config # Importa la clase Config centralizada
+from generador_lista_no_excluidos import _cargar_set_registros_procesados
 
-        # Nombre de outfolder Constancias(pdf's)
-        self.NOMBRE_FOLDER_CONSTANCIAS = 'Certificados Entrenamiento Viva Handling'
-        self.NOMBRE_FOLDER_ONEDRIVE_CONSTANCIAS = '2.Constancias_actual'
-        self.NOMBRE_FOLDER_CONSTANCIAS_BAJAS = '1. BAJAS'
-
-        # Folders paths
-        self.folder_data_processed = r'.\data\processed'
-        self.folder_data_processed_dashboard = r'.\data\processed\dashboard_tables'
-        self.folder_data_raw = r'.\data\raw'
-        self.folder_archivos_compartidos = r'C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\Certificados Entrenamiento Viva Handling - Certficados'
-
-        # Files paths
-        self.file_hc_table = os.path.join(self.folder_data_processed_dashboard, 'hc_table.csv')
-        self.file_lista_pdfs_nuevos_no_excluidos = os.path.join(self.folder_data_processed, self.nombre_archivo_lista_pdfs_nuevos_no_excluidos)
-
-        # Outpaths
-        self.outpath_processed_files_log = os.path.join(self.folder_data_processed, self.nombre_archivo_registro_archivos_procesados)
-        self.outpath_xlsx = os.path.join(self.folder_data_processed, self.nombre_archivo_xlsx)
-        self.outpath_csv = os.path.join(self.folder_data_processed, self.nombre_archivo_csv)
-        self.outpath_constancias_pdfs = os.path.join(self.folder_data_processed, self.NOMBRE_FOLDER_CONSTANCIAS)
-        self.outpath_onedrive_constancias_pdfs = os.path.join(self.folder_archivos_compartidos, self.NOMBRE_FOLDER_ONEDRIVE_CONSTANCIAS)
-        self.outpath_constancias_bajas_pdfs = os.path.join(self.outpath_constancias_pdfs, self.NOMBRE_FOLDER_CONSTANCIAS_BAJAS)
-        self.outpath_onedrive_constancias_bajas_pdfs = os.path.join(self.outpath_onedrive_constancias_pdfs, self.NOMBRE_FOLDER_CONSTANCIAS_BAJAS)
-
-        # Textos a buscar dentro de cada archivo para identificar el tipo de constancia
-        self.nombres_archivos_sat = ['instructor sat', '2025-T', 'apoyo en tierra', 'sat.']
-        self.nombres_archivos_avsec = ['AVSEC', 'AVSEC-2024', 'AVSEC-2025', 'AVSE ', 'seguridad de la aviación', 'seguridad de la aviacion']
-        self.nombres_archivos_sms = ['SMS', 'SAFETY MANAGEMENT SYSTEM']
-
-        # Mapeo de vocales con acento o sin acento para normalización
-        self.vocales_acentos = {
-            'á': 'a', 'Á': 'A', 'é': 'e', 'É': 'E', 'í': 'i', 'Í': 'I',
-            'ó': 'o', 'Ó': 'O', 'ú': 'u', 'Ú': 'U'
-        }
-
-        # Mapeo de meses abreviado y completo
-        self.mapeo_meses = {
-            'ene': 1, 'feb': 2, 'mar': 3, 'abr': 4, 'may': 5, 'jun': 6,
-            'jul': 7, 'ago': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dic': 12,
-            'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio': 6,
-            'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12,
-            'jaan': 1, # Caso específico "Jaan"
-        }
-
-        # Atributo para el set de archivos procesados en memoria
-        self.processed_files_set_in_memory = set()
-
-        self.temp_split_pdfs_folder = os.path.join(self.folder_data_processed, 'temp_split_pdfs') # pdf temporales
-
-        # Asegurar que las carpetas existan
-        # Rutas definidas
-        self._create_output_folders()
-
-        # Script: 'generador_lista_no_excluidos.py'
-        #  Rutas de carpetas fuente
-        self.carpetas_fuente = [
-            # r"C:\Users\bryan.betancur\Projects\Viva-handling\data\raw\prueba"
-            # ,
-            r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\Certificados Entrenamiento Viva Handling - Certficados\1.Constancias_agrupadas",
-            r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\Capacitación SAT Pronomina MTY - 2025"
-            ,
-            r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\Certificados Entrenamiento Viva Handling - Certficados\3.Constancias_anterior",
-            r"C:\Users\bryan.betancur\OneDrive - Vivaaerobus\archivos_compartidos\Aeropuertos - AUTOPRESTACION MTY"
-        ]                
-        # Año mínimo para la fecha de modificación (inclusive)
-        self.año_minimo_modificacion = 2024
-
-        # Años específicos a excluir si aparecen en el nombre del archivo
-        self.años_no_vigentes = ['2018', '2019', '2020', '2021', '2022', '2023', 'P.P.2022', 'P.P.2023']
-
-        # Prefijos y sufijos a excluir (insensibles a mayúsculas/minúsculas)
-        self.prefijos_excluidos = [
-            'bitcora', 'bitacora ', 'fori ', 'ojt ', '2024 rtar ', 'ef-', 'ef ', 'ex-', 'ex ', 'id ', 'id-', 'la ', 'la-', 'l.a.', 'l.a. ', 'l.a.-', 'ro-', 'ro ', 'sat-ro', 'pb', 'laf', '2025-r', 'dif ', 'dif-', 'td', 'green', 'bajas', 'bitacora'
-        ] # Quitamos '09 Bajas' por necesidad de constancias
-        self.sufijos_excluidos = ['cun', 'gc-25', 'gp-25'] # Quitamos ' ro' por necesidad de constancias
-
-        # Nombre y ruta del archivo de salida:
-        # --- Archivo log, guarda todas las rutas de los archivos procesados
-        self.ruta_registro_archivos_procesados = os.path.join(self.folder_data_processed, 'registro_archivos_procesados.txt')
-        # --- Archivo lista de rutas pdfs(NUEVOS)
-        self.ruta_nuevo_archivo_no_excluidos = os.path.join(self.folder_data_processed, 'lista_pdfs_nuevos_no_excluidos.txt')
-        
-    # Método privado
-    def _create_output_folders(self):
-        """Crea las carpetas de salida si NO existen."""
-        # Se usa self. para acceder a los atributos de ruta definidos arriba
-        os.makedirs(self.folder_data_processed, exist_ok=True)
-        os.makedirs(self.folder_data_raw, exist_ok=True)
-        os.makedirs(self.outpath_constancias_pdfs, exist_ok=True)
-        os.makedirs(self.outpath_constancias_bajas_pdfs, exist_ok=True)
-        os.makedirs(self.outpath_onedrive_constancias_bajas_pdfs, exist_ok=True)
-        os.makedirs(os.path.dirname(self.outpath_processed_files_log), exist_ok=True)
-        # Asegurar también para el archivo de lista de nuevos
-        os.makedirs(os.path.dirname(self.file_lista_pdfs_nuevos_no_excluidos), exist_ok=True)
-        os.makedirs(self.temp_split_pdfs_folder, exist_ok=True)
+# Las definiciones de rutas base de usuario, onedrive_org_name, onedrive_shared_base_path
+# y la clase Config se eliminan de aquí, ya que se manejan en config.py.
 
 def _añadir_set_procesado_en_memoria(file_path: str, config: Config):
     """
@@ -129,8 +24,8 @@ def _añadir_set_procesado_en_memoria(file_path: str, config: Config):
 
 def _guardar_registro_procesado_a_disco(config: Config):
     """
-    Guarda toas las rutas unicas del set en memoria al archivo de registro. 
-    Este archivo se reescribe completamente
+    Guarda todas las rutas unicas del set en memoria al archivo de registro.
+    Este archivo se reescribe completamente.
     """
     try:
         with open(config.outpath_processed_files_log, 'w', encoding='utf-8') as f:
@@ -138,7 +33,7 @@ def _guardar_registro_procesado_a_disco(config: Config):
               f.write(f"{path}\n")
         print(f"Registro de archivo procesados actualizado con {len(config.processed_files_set_in_memory)} rutas unicas en: '{config.outpath_processed_files_log}'")
     except Exception as e:
-        print(f"ERROR: No se pudo guardar el registro de archivos procesados en: '{config.outpath_processed_files_log}'. Error: {e}")  
+        print(f"ERROR: No se pudo guardar el registro de archivos procesados en: '{config.outpath_processed_files_log}'. Error: {e}")
 
 def rmtree_onerror_retry(func, path, exc_info):
     """
@@ -150,18 +45,16 @@ def rmtree_onerror_retry(func, path, exc_info):
     if ex_type is PermissionError:
         print(f"  - DEBUG: Permiso denegado para '{path}'. Intentando cambiar permisos...")
         try:
-            # Cambia los permisos del archivo para que sea escribible para el usuario propietario
             os.chmod(path, stat.S_IWUSR)
-            func(path) # Reintenta la función que falló (os.remove o os.rmdir)
+            func(path)
             print(f"  - DEBUG: Permisos cambiados y operación reintentada en '{path}'.")
         except Exception as retry_e:
             print(f"  - ADVERTENCIA: Falló el reintento después de cambiar permisos en '{path}': {retry_e}")
-            raise # Re-lanza si el reintento también falla
+            raise
     else:
-        # Si no es PermissionError, re-lanza la excepción original para que se maneje arriba
         raise
 
-def mover_carpetas_bajas(config: Config):
+def mover_carpetas_bajas(config: Config): # Acepta el objeto Config
     """
     Identifica las carpetas de empleados en la ruta de activos que corresponden a
     empleados con estatus 'BAJA' según hc_table.csv, y las mueve a la carpeta de bajas.
@@ -171,11 +64,11 @@ def mover_carpetas_bajas(config: Config):
 
     df_hc = pd.DataFrame()
     try:
-        df_hc = pd.read_csv(config.file_hc_table, encoding='utf-8')
+        df_hc = pd.read_csv(config.hc_table_path, encoding='utf-8') # Usa config.hc_table_path
         df_hc['#emp'] = df_hc['#emp'].astype('string').str.strip()
         df_hc['estatus'] = df_hc['estatus'].astype('string').str.upper().str.strip()
     except FileNotFoundError:
-        print(f"Advertencia: No se encontró 'hc_table.csv' en '{config.file_hc_table}'. No se moverán carpetas de bajas.")
+        print(f"Advertencia: No se encontró 'hc_table.csv' en '{config.hc_table_path}'. No se moverán carpetas de bajas.")
         return
     except Exception as e:
         print(f"Error al cargar 'hc_table.csv' para mover carpetas de bajas: {e}. No se moverán carpetas.")
@@ -186,8 +79,8 @@ def mover_carpetas_bajas(config: Config):
         print("No se encontraron empleados con estatus 'BAJA' en 'hc_table.csv'. Saltando movimiento de carpetas.")
         return
 
-    source_root_active = config.outpath_onedrive_constancias_pdfs
-    destination_root_bajas = config.outpath_onedrive_constancias_bajas_pdfs
+    source_root_active = config.onedrive_certs_active # Usa config.onedrive_certs_active
+    destination_root_bajas = config.onedrive_certs_bajas # Usa config.onedrive_certs_bajas
 
     os.makedirs(destination_root_bajas, exist_ok=True)
 
@@ -207,7 +100,7 @@ def mover_carpetas_bajas(config: Config):
 
         if current_folder_path == destination_root_bajas:
             continue
-        
+
         emp_id_str = None
         try:
             if folder_name.isdigit() and int(folder_name) != 0:
@@ -223,7 +116,7 @@ def mover_carpetas_bajas(config: Config):
             target_folder_path = os.path.join(destination_root_bajas, folder_name)
 
             # --- Fase 1: Intentar eliminar la carpeta existente en BAJAS con reintentos ---
-            max_retries = 5 # Número de intentos
+            max_retries = 5
             current_retry = 0
             deletion_succeeded = False
 
@@ -237,21 +130,19 @@ def mover_carpetas_bajas(config: Config):
                     except PermissionError as e_perm:
                         current_retry += 1
                         print(f"  - ADVERTENCIA: Permiso denegado al eliminar '{target_folder_path}' (Intento {current_retry}/{max_retries}). Reintentando en 0.5 segundos...")
-                        time.sleep(0.5) # Pequeño retardo
+                        time.sleep(0.5)
                     except Exception as e_rmtree:
                         print(f"  - ERROR: Falló la eliminación de la carpeta existente en BAJAS '{target_folder_path}': {e_rmtree}. Este error probablemente impide el movimiento.")
                         error_count += 1
-                        break # Salir del bucle de reintentos por un error no manejable
-                
+                        break
+
                 if not deletion_succeeded:
                     print(f"  - ERROR: No se pudo eliminar la carpeta '{target_folder_path}' después de {max_retries} intentos. Saltando el movimiento para este empleado.")
                     error_count += 1
-                    continue # Saltar al siguiente empleado si no podemos limpiar el destino
+                    continue
 
             # --- Fase 2: Intentar mover la carpeta del activo a Bajas ---
             try:
-                # Si llegamos aquí, la carpeta de destino o no existía o se eliminó con éxito.
-                # Ahora shutil.move debería funcionar.
                 shutil.move(current_folder_path, destination_root_bajas)
                 print(f"  - MOVIO: Carpeta de empleado '{folder_name}' a '{destination_root_bajas}'.")
                 moved_count += 1
@@ -279,23 +170,23 @@ def cargar_rutas_archivos_desde_archivo(file_name):
     try:
         if not os.path.exists(file_name):
             print(f"Advertencia: El archivo {file_name} no se encontro. No hay archivos para cargar.")
-            return []  # Retorna una lista vacía si el archivo no existe
+            return []
         with open(file_name, 'r', encoding='utf-8') as f:
             for line in f:
-                parts = line.strip().split('|') # Dividir la línea por '|'
+                parts = line.strip().split('|')
                 if len(parts) == 2:
                     path = parts[0]
-                    is_grouped = (parts[1].lower() == 'grouped')# Convertir el flag a booleano
+                    is_grouped = (parts[1].lower() == 'grouped')
                     loaded_paths_with_flags.append((path, is_grouped))
                 elif len(parts) == 1 and parts[0]:
                     print(f"Advertencia: Formato de línea '{line.strip()}' inesperado. Asumiendo standalone.")
-                    loaded_paths_with_flags.append((parts[0], False)) # Por defecto, asume que es standalone
+                    loaded_paths_with_flags.append((parts[0], False))
         print(f"Se cargaron {len(loaded_paths_with_flags)} rutas de archivos desde {file_name}.")
     except Exception as e:
         print(f"Error al cargar rutas de archivos desde {file_name}: {e}")
     return loaded_paths_with_flags
-        
-def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str = None):
+
+def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str = None): # Acepta el objeto Config
     """
     Esta función recibe la ruta de un archivo PDF y extrae los datos relevantes de la constancia.
     `original_source_path` es la ruta del archivo fuente original (agrupado o standalone)
@@ -303,13 +194,13 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
     """
 
     if original_source_path is None:
-        original_source_path = ruta_pdf # Si no se especifica, es el mismo.
+        original_source_path = ruta_pdf
 
     file_name = os.path.basename(ruta_pdf)
     datos = {
         "nombre_archivo" : file_name,
-        "ruta_original" : ruta_pdf, # Esta es la ruta del archivo PDF que se está leyendo (puede ser temporal)
-        "original_source_path": original_source_path, # Esta es la ruta del archivo fuente original
+        "ruta_original" : ruta_pdf,
+        "original_source_path": original_source_path,
         "Nombre" : "Nombre no encontrado",
         "Curso" : "Curso no encontrado",
         "Fecha" : "Fecha no encontrada",
@@ -327,47 +218,39 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
         print(f"Error al leer el pdf '{file_name}'. Error: {e}")
         return datos
 
-    # --- Lógica para determinar el tipo de constancia ---
-    # Prioridad: SAT -> SMS -> AVSEC
     constancia_type = "UNKNOWN"
 
-    # 1. Verificar si es SAT
-    for n in config.nombres_archivos_sat:
+    for n in config.nombres_archivos_sat: # Usa config.nombres_archivos_sat
         if n.lower() in texto_extraido.lower():
             constancia_type = "SAT"
-            break # Encontró palabra clave SAT, asumimos que es SAT
+            break
 
-    # 2. Si no es SAT, verificar si es SMS
     if constancia_type == "UNKNOWN":
-        for n in config.nombres_archivos_sms:
+        for n in config.nombres_archivos_sms: # Usa config.nombres_archivos_sms
             if n.lower() in texto_extraido.lower():
                 constancia_type = "SMS"
-                break # Encontró palabra clave SMS, asumimos que es SMS
+                break
 
-    # 3. Si no es SAT ni SMS, verificar si es AVSEC
     if constancia_type == "UNKNOWN":
-        for n in config.nombres_archivos_avsec:
+        for n in config.nombres_archivos_avsec: # Usa config.nombres_archivos_avsec
             if n.lower() in texto_extraido.lower():
                 constancia_type = "AVSEC"
-                break # Encontró palabra clave AVSEC, asumimos que es AVSEC
+                break
 
     # --- Procesar datos basándose en el tipo identificado ---
     if constancia_type == "SAT":
         datos['Curso'] = 'SAT'
 
-        # Nombre Colaborador / Empleado
         patron_nombre = r"(?:Otorga la presente constancia a:|Otorga el presente reconocimiento a:)\s*\n*(.*?)\s*\n*(?:Por haber concluido satisfactoriamente el curso|POR HABER CONCLUIDO SATISFACTORIAMENTE EL CURSO)"
         coincidencia_nombre = re.search(patron_nombre, texto_extraido, re.DOTALL | re.IGNORECASE)
         if coincidencia_nombre:
             datos['Nombre'] = coincidencia_nombre.group(1).strip()
 
-        # Curso (mantenemos la lógica de tu script original que podría sobrescribir 'SAT' si encuentra otro curso)
         patron_curso = r"Por haber concluido satisfactoriamente el curso\s*\n*(.*?)(?=\s*[\s•]*CONTENIDO TEMÁTICO:?|\s*\n*Impartido en)"
         coincidencia_curso = re.search(patron_curso, texto_extraido, re.DOTALL | re.IGNORECASE)
         if coincidencia_curso:
             datos['Curso'] = coincidencia_curso.group(1).strip()
 
-        # Fecha / Curso
         patron_fecha = r"Impartido en .*?(?:el;?|del)\s*(.*?)(?=\n(?:[A-Z][a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]+)?(?:Duración|Modalidad)|$)"
         coincidencia_fecha = re.search(patron_fecha, texto_extraido, re.DOTALL | re.IGNORECASE)
         if coincidencia_fecha:
@@ -378,7 +261,6 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
             if coincidencia_fecha_alt:
                 datos['Fecha'] = coincidencia_fecha_alt.group(1).strip()
 
-        # Instructor / Curso
         patron_instructor = r"(.+?)\s*\n*Instructor"
         coincidencia_instructor = re.findall(patron_instructor, texto_extraido, re.DOTALL | re.IGNORECASE)
         if coincidencia_instructor:
@@ -387,13 +269,11 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
             if lines:
                 datos["Instructor"] = lines[-1]
 
-        # Grupo / Curso
         patron_grupo = r"Grupo:\s*([A-Za-z0-9.]+(?:[\s-][A-Za-z0-9.]+)*[\s-]*\d{2})"
         coincidencia_grupo = re.search(patron_grupo, texto_extraido, re.DOTALL | re.IGNORECASE)
         if coincidencia_grupo:
             datos['Grupo'] = coincidencia_grupo.group(1).strip()
         else:
-            # Revisa si este patrón AVSEC es realmente para SAT, o si necesitas un patrón SAT más específico.
             patron_grupo_alt = r"\bAVSEC-\d{4}-\d{2}\b"
             coincidencia_grupo_alt = re.search(patron_grupo_alt, texto_extraido)
             if coincidencia_grupo_alt:
@@ -401,10 +281,7 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
 
     elif constancia_type == "SMS":
         datos['Curso'] = 'SMS'
-        # print(f"\nImprimiento texto extraido de la constancia 'SMS': {file_name}\n")
-        # print(texto_extraido) # Pruebas
 
-        # Nombre: Prioridad 1 - después de "Grants this recognition to:"
         patron_nombre_grants = r"Grants\s+this\s+recognition\s+to:\s*\n*(.*?)(?:\n|$)"
         coincidencia_nombre_grants = re.search(patron_nombre_grants, texto_extraido, re.IGNORECASE)
         if coincidencia_nombre_grants and coincidencia_nombre_grants.group(1).strip():
@@ -415,18 +292,18 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
             coincidencia_nombre_inicio = re.search(patron_nombre_inicio, texto_extraido, re.MULTILINE)
             if coincidencia_nombre_inicio and coincidencia_nombre_inicio.group(1).strip():
                 datos['Nombre'] = re.sub(r'\s+', ' ', coincidencia_nombre_inicio.group(1)).strip()
-            else: # Prioridad 2 - después de "Seguridad Aérea"
+            else:
                 patron_nombre_sms = r"Seguridad\s+Aérea\s*\n+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+)"
                 coincidencia_nombre_sms = re.search(patron_nombre_sms, texto_extraido, re.IGNORECASE)
                 if coincidencia_nombre_sms:
                     datos['Nombre'] = coincidencia_nombre_sms.group(1).strip()
 
-        if "(sms)" in datos['Nombre'].lower(): # Si "(sms)" está en el nombre extraído, buscar alternativa
+        if "(sms)" in datos['Nombre'].lower():
             patron_nombre_inicio = r"^\s*([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]+)+)\s*\n+Impartido\s+"
             coincidencia_nombre_inicio = re.search(patron_nombre_inicio, texto_extraido, re.MULTILINE)
             if coincidencia_nombre_inicio and coincidencia_nombre_inicio.group(1).strip():
                 datos['Nombre'] = re.sub(r'\s+', ' ', coincidencia_nombre_inicio.group(1)).strip()
-            else: # Prioridad 3 - primera línea del texto si no hay encabezado
+            else:
                 first_line_text = texto_extraido.split('\n')[0] if texto_extraido else ''
                 patron_nombre_primera_linea = r"^\s*([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+)\s*$"
                 coincidencia_nombre_primera_linea = re.search(patron_nombre_primera_linea, first_line_text)
@@ -434,15 +311,12 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
                     nombre_limpio_3 = re.sub(r'\s+', ' ', coincidencia_nombre_primera_linea.group(1))
                     datos['Nombre'] = nombre_limpio_3.strip()
 
-        # Curso: robusto para espacios extra
         patron_curso = r"(inicial\s+de\s+Safety\s+Management\s+System\s+\(SMS\)|recurrente\s+de\s+Safety\s+Management\s+System\s+\(SMS\)|Safety\s+Management\s+System\s+\(SMS\))"
         coincidencia_curso = re.search(patron_curso, texto_extraido, re.IGNORECASE)
         if coincidencia_curso:
             curso_limpio = re.sub(r'\s+', ' ', coincidencia_curso.group(0))
             datos['Curso'] = curso_limpio.replace('.', '').strip().capitalize()
-        
-        # Patrón 1: Busca "Impartido el DD (de|del) MES (de|del)? YYYY"
-        # Este patrón espera 'Impartido el' de forma más directa.
+
         patron_fecha_1 = re.compile(
             r"Impartido\s+el\s+(\d{1,2}\s+(?:de|del)\s+[a-zñáéíóúü]+\s+(?:de|del)?\s*\d{4})",
             re.IGNORECASE
@@ -450,72 +324,58 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
         coincidencia_fecha = patron_fecha_1.search(texto_extraido)
 
         if coincidencia_fecha:
-            # Limpia espacios extra y normaliza "del" a "de"
             datos['Fecha'] = re.sub(r'\s+', ' ', coincidencia_fecha.group(1)).replace('del', 'de').strip()
         else:
-            # Patrón 2: Busca "Impartido en [cualquier texto] el DD (de|del) MES (de|del)? YYYY"
-            # Usa '.*?' (cualquier caracter, no voraz) para ser flexible con el texto intermedio.
             patron_fecha_2 = re.compile(
                 r"Impartido\s+en.*?el\s+(\d{1,2}\s+(?:de|del)\s+[a-zñáéíóúü]+\s+(?:de|del)?\s*\d{4})",
                 re.IGNORECASE
             )
             coincidencia_fecha = patron_fecha_2.search(texto_extraido)
             if coincidencia_fecha:
-                # Limpia espacios extra y normaliza "del" a "de"
                 fecha_limpia = re.sub(r'\s+', ' ', coincidencia_fecha.group(1)).replace('del', 'de').strip()
                 datos['Fecha'] = fecha_limpia
 
-        # Grupo: robusto para varios formatos
-        # Priority 1: SMS-N-XXX-YY
         patron_grupo_n = r"(SMS[\s-]N-\d{3,4}-\d{2})"
         coincidencia_grupo = re.search(patron_grupo_n, texto_extraido)
         if coincidencia_grupo:
             datos['Grupo'] = coincidencia_grupo.group(1).strip()
         else:
-            # Priority 2: SMS-SAC-XXX-YY
             patron_grupo_sac = r"(SMS-SAC-\d{3,4}-\d{2})"
             coincidencia_grupo_sac = re.search(patron_grupo_sac, texto_extraido)
             if coincidencia_grupo_sac:
                 datos['Grupo'] = coincidencia_grupo_sac.group(1).strip()
             else:
-                # Priority 3: SMS-DDD-YY (e.g., SMS-658-25)
                 patron_grupo_sms_directo = r"(SMS-\d{3,4}-\d{2})"
                 coincidencia_grupo_sms_directo = re.search(patron_grupo_sms_directo, texto_extraido)
                 if coincidencia_grupo_sms_directo:
                     datos['Grupo'] = coincidencia_grupo_sms_directo.group(1).strip()
                 else:
-                    # Priority 4: More general SMS patterns
                     patron_grupo_general = r"(SMS\s*–\s*[A-Z]+\s*–\s*\d+\s*-\s*\d+|SMS[\s-]?N-\d+-\d+|SMS-SAC-\d+-\d+)"
                     coincidencia_grupo_general = re.search(patron_grupo_general, texto_extraido)
                     if coincidencia_grupo_general:
                         datos['Grupo'] = coincidencia_grupo_general.group(1).strip()
                     else:
-                        # Priority 5: Generic "Grupo:" pattern (last SMS-specific resort)
                         patron_sin_sms = r"Grupo:\s*(\d+-\d+|[A-Z]+-[A-Z]+-[A-Z]-\d+-\d+)"
                         coincidencia_sin_sms = re.search(patron_sin_sms, texto_extraido)
                         if coincidencia_sin_sms:
                             datos['Grupo'] = coincidencia_sin_sms.group(1).strip()
                         else:
-                            # Intentar encontrar un patrón de grupo AVSEC si todos los SMS fallaron.
-                            # Priority 6 (dentro del bloque SMS): Grupo AVSEC con prefijo "Grupo:"
                             patron_grupo_avsec_fallback_1 = r"Grupo:\s*((?:VH-)?(?:PRO-)?AVSEC-\d{3,4}-\d{2}\b)"
                             coincidencia_avsec_fallback = re.search(patron_grupo_avsec_fallback_1, texto_extraido, re.IGNORECASE)
                             if coincidencia_avsec_fallback:
                                 datos['Grupo'] = coincidencia_avsec_fallback.group(1).strip()
                             else:
-                                # Priority 7 (dentro del bloque SMS): Grupo AVSEC en cualquier parte del texto (sin prefijo explícito "Grupo:")
                                 patron_grupo_avsec_fallback_2 = r"((?:VH-)?(?:PRO-)?AVSEC-\d{3,4}-\d{2}\b)"
                                 coincidencia_avsec_fallback = re.search(patron_grupo_avsec_fallback_2, texto_extraido, re.IGNORECASE)
                                 if coincidencia_avsec_fallback:
                                     datos['Grupo'] = coincidencia_avsec_fallback.group(1).strip()
 
-        # Instructor: nombre antes de "Instructor"
         patron_instructor = r"([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+)\s*\n*Instructor"
         coincidencia_instructor = re.search(patron_instructor, texto_extraido, re.DOTALL)
         if coincidencia_instructor:
             instructor_limpio = coincidencia_instructor.group(1).strip()
             datos["Instructor"] = re.sub(r'\s*Instructor$', '', instructor_limpio, flags=re.IGNORECASE).strip()
-        else: # Busca el nombre antes de "Coordinador de Entrenamiento de Seguridad Aérea"
+        else:
             patron_coordinador = r"([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+)\s*\n*Coordinador de Entrenamiento"
             coincidencia_coordinador = re.search(patron_coordinador, texto_extraido, re.DOTALL | re.IGNORECASE)
             if coincidencia_coordinador:
@@ -523,28 +383,22 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
 
     elif constancia_type == "AVSEC":
         datos['Curso'] = 'AVSEC'
-        # print(f"\nImprimiento texto extraido de la constancia 'AVSEC': {file_name}\n")
-        # print(texto_extraido) # Pruebas
 
-        # Nombre Colaborador / Empleado - PATRÓN ROBUSTECIDO
         patron_nombre_avsec = r"^(.*?)\s+(?:Impartido en (?:la )?Ciudad de|Por haber concluido satisfactoriamente el curso|CONTENIDO TEMATICO|Curso:|Folio:|Viva Aerobus|Duración de:)"
         coincidencia_nombre = re.search(patron_nombre_avsec, texto_extraido, re.DOTALL | re.IGNORECASE)
         if coincidencia_nombre:
             datos['Nombre'] = coincidencia_nombre.group(1).strip()
 
-        # Curso - PATRÓN ROBUSTECIDO
         patron_curso_avsec = r"Por haber concluido satisfactoriamente el curso\s*\n*(.*?)(?:\s*Calificación obtenida:?|\s*Duración de:)"
         coincidencia_curso = re.search(patron_curso_avsec, texto_extraido, re.DOTALL | re.IGNORECASE)
         if coincidencia_curso:
             datos['Curso'] = coincidencia_curso.group(1).strip()
 
-        # Fecha / Curso
         patron_fecha_avsec = r"Impartido en .*?\s*el\s*(.*?)(?=\n|Duración|Modalidad)"
         coincidencia_fecha = re.search(patron_fecha_avsec, texto_extraido, re.DOTALL | re.IGNORECASE)
         if coincidencia_fecha:
             datos['Fecha'] = coincidencia_fecha.group(1).strip()
 
-        # Instructor / Curso - PATRÓN ROBUSTECIDO
         patron_instructor_avsec = r"(.+?)\s*\n*Instructor(?: Autorizado)?\.?"
         coincidencia_instructor = re.findall(patron_instructor_avsec, texto_extraido, re.DOTALL | re.IGNORECASE)
         if coincidencia_instructor:
@@ -558,16 +412,15 @@ def extraer_datos_constancia(ruta_pdf, config: Config, original_source_path: str
                 if instructor in texto_extraido:
                     datos['Instructor'] = 'Oscar Monzalvo Martinez'
 
-        # Grupo / Curso / 2.0
         patron_grupo_avsec = r"(?:Grupo:\s*|Curso:\s*\d{1,2}-\d{1,2}\s*\n*|\b)((?:PRO-)?AVSEC-\d{3,4}-\d{2}\b)"
         coincidencia_grupo = re.search(patron_grupo_avsec, texto_extraido, re.DOTALL | re.IGNORECASE)
 
         if coincidencia_grupo:
             datos['Grupo'] = coincidencia_grupo.group(1).strip()
 
-    return datos 
+    return datos
 
-def procesar_archivos_constancias(lista_rutas_archivos, config: Config):
+def procesar_archivos_constancias(lista_rutas_archivos, config: Config): # Acepta el objeto Config
     """
     Procesa una lista especifica de archivos(rutas de constancias), utilizando la funcion 'extraccion de datos'.
     """
@@ -578,7 +431,7 @@ def procesar_archivos_constancias(lista_rutas_archivos, config: Config):
     if not lista_rutas_archivos:
         print(f"\nNo hay archivos para procesar.\n")
         return []
-    
+
     print(f"\nIniciando el procesamiento de {len(lista_rutas_archivos)} archivos de constancias...\n")
 
     for full_pdf_path in lista_rutas_archivos:
@@ -588,8 +441,7 @@ def procesar_archivos_constancias(lista_rutas_archivos, config: Config):
             continue
         try:
             print(f"Procesando archivo: {os.path.basename(full_pdf_path)}")
-            # Pasamos la función extraer_datos_constancia y la class Config
-            datos_extraidos = extraer_datos_constancia(full_pdf_path, config)
+            datos_extraidos = extraer_datos_constancia(full_pdf_path, config) # Pasa config a extraer_datos_constancia
             datos_cojunto_excluidos.append(datos_extraidos)
             total_procesados += 1
         except Exception as e:
@@ -608,16 +460,12 @@ def limpiar_partes_archivo(text, vocales_acentos_map: dict):
     Normaliza acentos.
     """
     if not isinstance(text, str):
-        return "" # Retorna cadena vacía si no es string
-    
-    # Primero, normalizar los acentos para que el nombre de archivo no los contenga
+        return ""
+
     text_normalized_accents = normalizar_acentos(text, vocales_acentos_map)
 
-    # Lista de caracteres inválidos en nombres de archivo de Windows/Linux
     invalid_chars = r'[<>:"/\\|?*\']'
-    # Reemplazar caracteres inválidos con un guion bajo o removerlos
-    cleaned_text = re.sub(invalid_chars, '', text)
-    # Reemplazar espacios y múltiples guiones con un solo guion bajo
+    cleaned_text = re.sub(invalid_chars, '', text_normalized_accents)
     cleaned_text = re.sub(r'\s+', '_', cleaned_text).strip('_')
 
     return cleaned_text
@@ -629,14 +477,9 @@ def normalizar_acentos(texto, vocales_acentos_map: dict):
     if not isinstance(texto, str):
         return texto
 
-    # Normalizar el texto de entrada a la forma NFC (Normalization Form Canonical Composition).
-    # Esto convierte los caracteres a su representación precompuesta de un solo punto de código,
-    # lo que asegura que coincidan con las claves en 'vocales_acentos'.
-    texto_procesado = unicodedata.normalize('NFC', texto) # [1, 2, 4]
+    texto_procesado = unicodedata.normalize('NFC', texto)
 
     for acento, sin_acento in vocales_acentos_map.items():
-        # Aquí, 'acento' es ya la clave de tu diccionario, que asumimos está en NFC.
-        # Al haber normalizado 'texto_procesado' a NFC, las coincidencias ahora funcionarán.
         texto_procesado = texto_procesado.replace(acento, sin_acento)
 
     return texto_procesado
@@ -646,45 +489,33 @@ def homologar_curso(curso_raw: str):
     """
 
     if not isinstance(curso_raw, str):
-        return "OTRO" # Indica que no se pudo procesar
-    
+        return "OTRO"
+
     curso_lower = curso_raw.lower()
 
-    # --- Lógica para determinar el 'curso homologado' ---
-    # Prioridad: SAT -> SMS -> AVSEC
-    # Añadimos 'P.P: Prescreening of passengers'
-    # Añadimos 'Cabin Search', solo es para personal Administrativo
-
-    # Patrones para curso 'Cabin Search'
     if 'cabin search' in curso_lower:
         return 'Cabin Search'
 
-    # Patrones para cursos P.P
     if 'prescreening of passengers (trafico)' in curso_lower:
         return 'P.P(Trafico)'
 
-    # Patrones para cursos SAT
     if 'servicio de apoyo en tierra' in curso_lower or 'servicios de apoyo en tierra' in curso_lower:
         if 'rampa' in curso_lower or 'agente de rampa' in curso_lower:
             return 'SAT(Rampa)'
         if 'operador autoprestacion' in curso_lower:
-            return 'SAT(Operador Autoprestacion)'    
+            return 'SAT(Operador Autoprestacion)'
         if 'operador' in curso_lower:
             return 'SAT(Operador)'
         if 'asesor de servicio al cliente' in curso_lower or 'asesor de servicio a cliente' in curso_lower or 'asc' in curso_lower:
             return 'SAT(ASC)'
-        return 'SAT(General)' # Un nuevo tipo para SAT que no encaja en Rampa, Operador, ASC
+        return 'SAT(General)'
 
-    # Patrones para AVSEC
     if 'avsec' in curso_lower or 'seguridad de la aviacion' in curso_lower:
         return 'AVSEC'
-    
-    # Patrones para SMS
+
     if 'safety management system' in curso_lower or 'sms' in curso_lower:
         return 'SMS'
-    
-    # Patron para cursos SAT
-    # No lo incluye explicitamente
+
     if 'personal perteneciente' in curso_lower or 'personal permaneciente' in curso_lower:
         if 'rampa autoprestacion' in curso_lower:
             return 'SAT(Rampa Autoprestacion)'
@@ -694,14 +525,10 @@ def homologar_curso(curso_raw: str):
             return 'SAT(Trafico)'
         if 'csa autoprestacion' in curso_lower:
             return 'SAT(CSA Autoprestacion)'
-    
-    return 'OTRO' # Categoría para cursos que no encajan en ninguna de las anteriores
-    
-    # # Adicionales (Posibles errores en constancias)
-    # if 'sat' in curso_lower:
-    #     return 'SAT(General)' # Un nuevo tipo para SAT que no encaja en Rampa, Operador, ASC
-    
-def dividir_pdf_constancia_agrupado(grouped_pdf_path: str, config: Config):
+
+    return 'OTRO'
+
+def dividir_pdf_constancia_agrupado(grouped_pdf_path: str, config: Config): # Acepta el objeto Config
     """
     Dividir PDF de constancias agrupadas en PDFs individuales. Devuelve una lista de rutas a los archivos PDF temporales de una sola página. Se omiten las páginas no identificadas como certificados.
     """
@@ -721,11 +548,9 @@ def dividir_pdf_constancia_agrupado(grouped_pdf_path: str, config: Config):
 
             is_certificate_page = False
 
-            # Criterio de deteccion 1: Frase de otorgamiento/curso
             if re.search(patron_otorgamiento_curso, text, re.DOTALL | re.IGNORECASE):
                 is_certificate_page = True
-            
-            # Criterio de detección 2: Patrón específico de AVSEC en el pie de página
+
             if not is_certificate_page and re.search(patron_avsec_footer, text, re.IGNORECASE):
                 is_certificate_page = True
 
@@ -733,20 +558,18 @@ def dividir_pdf_constancia_agrupado(grouped_pdf_path: str, config: Config):
                 print(f"DEBUG: Página {i+1} de '{os.path.basename(grouped_pdf_path)}' no parece ser una constancia válida. Saltando.")
                 continue
 
-            # Si es una constancia, guarda esta página individual como un nuevo PDF temporal
             output_pdf = fitz.open()
-            output_pdf.insert_pdf(doc, from_page=i, to_page=i) # Inserta solo esta página
+            output_pdf.insert_pdf(doc, from_page=i, to_page=i)
 
             original_base_name = os.path.splitext(os.path.basename(grouped_pdf_path))[0]
             temp_filename_base = f"temp_{original_base_name}_page_{i+1}.pdf"
-            temp_filepath = os.path.join(config.temp_split_pdfs_folder, temp_filename_base)
-            
-            # Asegura un nombre de archivo temporal único para evitar sobrescrituras accidentales
+            temp_filepath = os.path.join(config.temp_split_pdfs_folder, temp_filename_base) # Usa config.temp_split_pdfs_folder
+
             unique_temp_filepath = temp_filepath
             count = 1
             while os.path.exists(unique_temp_filepath):
                 temp_filename_base_without_ext, temp_ext = os.path.splitext(temp_filename_base)
-                unique_temp_filepath = os.path.join(config.temp_split_pdfs_folder, f"{temp_filename_base_without_ext}_{count}{temp_ext}")
+                unique_temp_filepath = os.path.join(config.temp_split_pdfs_folder, f"{temp_filename_base_without_ext}_{count}{temp_ext}") # Usa config.temp_split_pdfs_folder
                 count += 1
 
             output_pdf.save(unique_temp_filepath)
@@ -761,14 +584,9 @@ def dividir_pdf_constancia_agrupado(grouped_pdf_path: str, config: Config):
         print(f"ERROR: No se pudo dividir el PDF agrupado '{os.path.basename(grouped_pdf_path)}'. Error: {e}")
         return []
 
-
-    except:
-        pass
-    pass
-
 def normalizar_mes(mes_str, mapeo_meses_map: dict):
     """Normaliza el nombre del mes (en español) a su número de mes."""
-    return mapeo_meses_map.get(mes_str.lower(), None) # Retorna None si no se encuentra mapeo
+    return mapeo_meses_map.get(mes_str.lower(), None)
 
 def parse_fecha_inicio(fecha_texto, mapeo_meses_map: dict):
     """
@@ -776,31 +594,23 @@ def parse_fecha_inicio(fecha_texto, mapeo_meses_map: dict):
     manejando diferentes formatos y rangos.
     """
     if pd.isna(fecha_texto) or not isinstance(fecha_texto, str):
-        return pd.NaT # Retorna 'Not a Time' para valores nulos o no-string
+        return pd.NaT
 
     fecha_texto_original = fecha_texto.strip()
     fecha_texto_lower = fecha_texto_original.lower()
 
-    # --- Paso 1: Extraer el año de forma robusta de la cadena completa ---
-    # Busca 4 dígitos que representen un año (e.g., 2024, 2025).
-    # Se busca el último año encontrado en la cadena, ya que suele ser el más relevante.
     year_str = None
     years_found = re.findall(r"(\d{4})", fecha_texto_original)
     if years_found:
-        year_str = years_found[-1] # Toma el último año encontrado
+        year_str = years_found[-1]
     else:
-        # Si no se encuentra un año de 4 dígitos, no podemos formar una fecha completa.
         return pd.NaT
 
     dia_str = None
     mes_str_raw = None
 
-    # --- Paso 2: Extraer Día y Mes con patrones priorizados ---
-
-    # Patrón A (Alta prioridad): "DD de MES de YYYY" o "DD de MES YYYY"
-    # Ejemplos: "08 de marzo de 2025", "04 de julio 2024", "31 de julio de 2025"
     patron_full_date_con_de = re.compile(
-        r"(\d{1,2})\s*de\s*([a-zñáéíóúü]+)(?:\s*de)?", # Captura día, mes, y permite 'de' opcional antes del año
+        r"(\d{1,2})\s*de\s*([a-zñáéíóúü]+)(?:\s*de)?",
         re.IGNORECASE
     )
     match = patron_full_date_con_de.search(fecha_texto_lower)
@@ -808,8 +618,6 @@ def parse_fecha_inicio(fecha_texto, mapeo_meses_map: dict):
         dia_str = match.group(1)
         mes_str_raw = match.group(2)
     else:
-        # Patrón B: "DD al DD MES" (para rangos, ejemplo: "29 enero al 01 febrero Enero-")
-        # Captura el primer día y el mes del rango.
         patron_al_rango = re.compile(
             r"^(\d{1,2})\s*(?:al|a)\s*\d{1,2}\s*([a-zñáéíóúü]+)",
             re.IGNORECASE
@@ -819,8 +627,6 @@ def parse_fecha_inicio(fecha_texto, mapeo_meses_map: dict):
             dia_str = match.group(1)
             mes_str_raw = match.group(2)
         else:
-            # Patrón C: "DD-DD MES" o "DD-MES" (para rangos o fechas simples con guion)
-            # Ejemplos: "19-21 Marzo", "19-Marzo"
             patron_guion_rango = re.compile(
                 r"^(\d{1,2})(?:[-\s]?\d{1,2})?[-\s]?([a-zñáéíóúü]+)",
                 re.IGNORECASE
@@ -830,8 +636,6 @@ def parse_fecha_inicio(fecha_texto, mapeo_meses_map: dict):
                 dia_str = match.group(1)
                 mes_str_raw = match.group(2)
             else:
-                # Patrón D: "DiaAbrev-DD-MesAbrev" (para formatos con día de la semana abreviado)
-                # Ejemplo: "lun-20-ene"
                 patron_dia_mes_abreviado = re.compile(
                     r"^(?:[a-zñáéíóúü]{2,4}[-\s]?)?(\d{1,2})[-\s]?([a-zñáéíóúü]{3,})",
                     re.IGNORECASE
@@ -841,8 +645,6 @@ def parse_fecha_inicio(fecha_texto, mapeo_meses_map: dict):
                     dia_str = match.group(1)
                     mes_str_raw = match.group(2)
                 else:
-                    # Patrón E (Menor prioridad): "DD MES" (cuando no hay "de" ni rangos específicos, pero sí día y mes)
-                    # Ejemplo: "19 Marzo", "29 Enero" (sin el "al" o "de")
                     patron_simple_no_de = re.compile(
                         r"(\d{1,2})\s*([a-zñáéíóúü]+)",
                         re.IGNORECASE
@@ -852,24 +654,21 @@ def parse_fecha_inicio(fecha_texto, mapeo_meses_map: dict):
                         dia_str = match.group(1)
                         mes_str_raw = match.group(2)
 
-    # --- Paso 3: Combinar el día, mes extraídos y el año global para formar la fecha ---
     if dia_str and mes_str_raw:
         mes_num = normalizar_mes(mes_str_raw, mapeo_meses_map)
-        if mes_num is not None: # Solo si el mes se pudo normalizar a un número
+        if mes_num is not None:
             try:
-                # Usamos '%d %m %Y' para crear el objeto datetime
                 return datetime.strptime(f"{dia_str} {mes_num} {year_str}", '%d %m %Y')
             except ValueError:
-                pass # Si la combinación día/mes/año no es una fecha válida (ej. 31 de Febrero)
+                pass
 
-    return pd.NaT # Si ningún patrón coincide o el parsing final falla
+    return pd.NaT
 
 def cargar_data_hc(path_hc_table: str, vocales_acentos_map: dict):
     """
     Carga la tambla de empleado (HC), aplica normalizaciones y crea una columna
     adicional con el nombre en formato "NOMBRE APELLIDO(P) APELLIDO(M)" para mejorar las coincidencias.
     """
-    # Define antes por si hay error
     df_hc = pd.DataFrame(columns=['#emp', 'nombre_completo', 'nombre', 'paterno', 'materno', 'estatus'])
 
     try:
@@ -882,7 +681,7 @@ def cargar_data_hc(path_hc_table: str, vocales_acentos_map: dict):
             elif col not in df_hc.columns:
                 print(f"Advertencia: La columna '{col}' no se encuentra en el archivo HC. No se podra usar para el merge 'invertido'.")
                 df_hc[col] = ''
-        
+
         # Creamos la columna de nombre 'invertido' para que coincida con "NOMBRE, APELLIDO(P), APELLIDO(M)"
         df_hc['nombre_completo_invertido'] = df_hc['nombre'] + ' ' + df_hc['paterno'] + ' ' + df_hc['materno']
         df_hc['nombre_completo_invertido'] = df_hc['nombre_completo_invertido'].str.replace(r'\s+', ' ', regex=True).str.strip()
@@ -915,7 +714,7 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
     if not datos_conjunto_excluidos:
         print("No hay datos de constancias para procesar.")
         return pd.DataFrame() # Retorna DataFrame vacio
-    
+
     df_constancias = pd.DataFrame(datos_conjunto_excluidos)
     df_constancias.columns = df_constancias.columns.str.lower()
     df_constancias.columns = df_constancias.columns.str.replace(' ', '_', regex=False)
@@ -927,7 +726,7 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         if c in df_constancias.columns:
             df_constancias[c] = df_constancias[c].astype('string').fillna('').str.replace(',', '', regex=False).str.replace(r'\s+', ' ', regex=True).str.strip().apply(lambda x: normalizar_acentos(x, vocales_acentos_map))
         else:
-            df_constancias[c] = '' 
+            df_constancias[c] = ''
 
         # Asegurarse que 'nombre_archivo' y 'ruta_original' siempre sean string y no sea NaN, sin normalización de acentos.
         if 'nombre_archivo' in df_constancias.columns:
@@ -940,8 +739,13 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         else:
             df_constancias['ruta_original'] = '' # Si la columna no existe, crearla vacía
 
+        if 'original_source_path' in df_constancias.columns:
+            df_constancias['original_source_path'] = df_constancias['original_source_path'].astype('string').fillna('')
+        else:
+            df_constancias['original_source_path'] = ''
+
     # upper - nombre_completo - merge
-    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.upper().str.strip() 
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.upper().str.strip()
 
     # Asegurar consistencia con df_hc
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].apply(lambda x: normalizar_acentos(x, vocales_acentos_map))
@@ -952,7 +756,7 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
 
     # --- Aplicar filtros y contar descartados ---
     # Instructor excluido
-    df_filtrado = df_constancias[df_constancias['instructor'] != 'Enrique Ortiz Hernandez']
+    df_filtrado = df_constancias[df_constancias['instructor'] != 'ENRIQUE ORTIZ HERNANDEZ'] # Asegura mayúsculas para la comparación
     eliminado_por_instructor = recuento_filas_inicial - len(df_filtrado)
     if eliminado_por_instructor > 0:
         print(f"  - Descartados por 'instructor' (Enrique Ortiz Hernandez): {eliminado_por_instructor}")
@@ -992,7 +796,7 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
     recuento_filas_actuales = len(df_constancias)
 
     # Eliminar duplicados
-    df_constancias_deduplicated = df_constancias.drop_duplicates(keep='first') # `keep='first'` es el default, pero es bueno ser explícito
+    df_constancias_deduplicated = df_constancias.drop_duplicates(keep='first')
     eliminados_por_duplicados = recuento_filas_actuales - len(df_constancias_deduplicated)
     if eliminados_por_duplicados > 0:
         print(f"  - Descartados por ser registros duplicados: {eliminados_por_duplicados}")
@@ -1025,7 +829,7 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('OFELIA CLEMENTINA CORONADO CARRIZALEZ', 'OFELIA CLEMENTINA CORONADO CARRIZALES', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('SAGRARIO NUNEZ TOVAR', 'SAGRARIO NUÑEZ TOVAR', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('REYES O ALEJANDRO', 'REYES ALEJANDRO', regex=False)
-    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('MONTREAL SALAS HUGO HUMBERTO', 'MONRREAL SALAS HUGO HUMBERTO', regex=False)   
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('MONTREAL SALAS HUGO HUMBERTO', 'MONRREAL SALAS HUGO HUMBERTO', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('ABELDAÑO LEAL REGINA SAORI', 'ALBELDAÑO LEAL REGINA SAORI', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('IBARRA TREVIÑO BRAYAN ARTURO', 'IBARRA TREVIO BRAYAN ARTURO', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('MICHELE ALFARO PALOMEQUE', 'MICHELLE ALFARO PALOMEQUE', regex=False)
@@ -1033,78 +837,74 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
 
     # Modificacion de fecha manual por error en constancia.
     df_constancias.loc[
-        (df_constancias['nombre_archivo'] == 'OP 2024 SERRATO VELAZQUEZ VANESSA ESMERALDA.pdf') & (df_constancias['fecha'] == '29 JUNIO-2029.'), 
+        (df_constancias['nombre_archivo'] == 'OP 2024 SERRATO VELAZQUEZ VANESSA ESMERALDA.pdf') & (df_constancias['fecha'] == '29 JUNIO-2029.'),
         'fecha'
         ] = '29 JUNIO-2024.'
-    
+
     df_constancias.loc[
-        (df_constancias['nombre_archivo'] == 'OP 2024 PORTOS GAMEZ HECTOR ABRAHAM.pdf') & (df_constancias['fecha'] == '26 JUNIO-2026.'), 
+        (df_constancias['nombre_archivo'] == 'OP 2024 PORTOS GAMEZ HECTOR ABRAHAM.pdf') & (df_constancias['fecha'] == '26 JUNIO-2026.'),
         'fecha'
         ] = '26 JUNIO-2024.'
-    
+
     df_constancias.loc[
-        (df_constancias['nombre_archivo'] == 'OP 2024 AGUILAR CORONADO JOSE ANGEL DE JESUS.pdf') & (df_constancias['fecha'] == '27 JUNIO-2027.'), 
+        (df_constancias['nombre_archivo'] == 'OP 2024 AGUILAR CORONADO JOSE ANGEL DE JESUS.pdf') & (df_constancias['fecha'] == '27 JUNIO-2027.'),
         'fecha'
         ] = '27 JUNIO-2024.'
-    
+
     df_constancias.loc[
-        (df_constancias['nombre_archivo'] == 'OP 2025 MONTREAL SALAS HUGO HUMBERTO.pdf') & (df_constancias['fecha'] == 'MONTREAL SALAS Hugo Humberto Febrero-2025.'), 
+        (df_constancias['nombre_archivo'] == 'OP 2025 MONTREAL SALAS HUGO HUMBERTO.pdf') & (df_constancias['fecha'] == 'MONTREAL SALAS Hugo Humberto Febrero-2025.'),
         'fecha'
         ] = '25 FEBRERO-2025.'
-    
+
 
     # --- DOBLE MERGE PARA MEJORAR COINCIDENCIAS DE NOMBRES
 
     # Primer merge con el formato "NOMBRE APELLIDO(P) APELLIDO(M)" en 'df_constancias' vs "NOMBRE APELLIDO(P) APELLIDO(M)" en 'df_hc'
-    print("\nRealizando primer merge (Constancias: Apellido(P) Apellido(M) Nombre)")
+    print("\nRealizando primer merge (Constancias: Nombre Apellido(P) Apellido(M) contra HC: Nombre Apellido(P) Apellido(M))")
 
-    # #### MERGE 'Nombre'
     df_constancias_primer_merge = pd.merge(df_constancias,
                                      df_hc[['nombre_completo_invertido', '#emp', 'estatus']],
                                      left_on=['nombre_completo'], # Columna de constancias (Nombre Apellido),
                                      right_on=['nombre_completo_invertido'], # Columna invertida de HC (Nombre Apellido)
                                      how='left',
                                      suffixes=('', '_hc_pass1')) # Sufijo para evitar colisiones si hubiera otras columnas '#emp'
-    
-    # Renombrar '#emp_hc_pass1' a '#emp' para el primer pase
+
+    # Renombrar '#emp_hc_pass1' a '#emp' para el primer pase y estatus
     df_constancias_primer_merge = df_constancias_primer_merge.rename(columns={'#emp_hc_pass1': '#emp', 'estatus_hc_pass1': 'estatus'})
     # Eliminar la columna de merge usada de df_hc
     df_constancias_primer_merge = df_constancias_primer_merge.drop(columns=['nombre_completo_invertido'], errors='ignore')
 
     # Identificar registros que no se encontraron en el primer merge (donde #emp es NaN)
-    # Rellenamos con 0 temporalmente para el merge y luego lo limpiaremos
     registros_sin_coincidencia = df_constancias_primer_merge[df_constancias_primer_merge['#emp'].isnull()]
     registros_coincidentes = df_constancias_primer_merge[df_constancias_primer_merge['#emp'].notnull()]
 
-    print(f"  - Registros encontrados en el primer merge {len(registros_coincidentes)}")
-    print(f"  - Registros NO encontrados en el primer merge {len(registros_sin_coincidencia)}")
+    print(f"  - Registros encontrados en el primer merge: {len(registros_coincidentes)}")
+    print(f"  - Registros NO encontrados en el primer merge: {len(registros_sin_coincidencia)}")
 
     # Paso 2: Segundo merge para los registros no encontrados en el primer pase
-    # Ahora intentamos con el formato "APELLIDOP APELLIDOM NOMBRE" (df_constancias) vs "APELLIDOP APELLIDOM NOMBRE" (df_hc)
+    # Ahora intentamos con el formato "APELLIDOP APELLIDOM NOMBRE" (de df_constancias, si el nombre del PDF lo trae así)
+    # vs "APELLIDOP APELLIDOM NOMBRE" (df_hc['nombre_completo'])
 
     if not registros_sin_coincidencia.empty:
-        print("\nRealizando segundo merge (Constancias: Apellido(P) Apellido(M) Nombre)")
+        print("\nRealizando segundo merge (Constancias: Apellido(P) Apellido(M) Nombre contra HC: Apellido(P) Apellido(M) Nombre)")
         # Trabajar con una copia para evitar SettingWithCopyWarning
-        df_para_segundo_merge = registros_sin_coincidencia.copy() 
+        df_para_segundo_merge = registros_sin_coincidencia.copy()
 
         df_constancias_segundo_merge = pd.merge(df_para_segundo_merge,
-        df_hc[['nombre_completo', '#emp', 'estatus']], # Usar la columna original 'nombre_completo' de 'df_hc'
-        left_on=['nombre_completo'], # Columna de Constancias (Apellidos-Nombre)
-        right_on=['nombre_completo'], # Columna original de 'df_hc'
-        how='left',
-        suffixes=('_pass1', '_pass2'))
+                                                df_hc[['nombre_completo', '#emp', 'estatus']], # Usar la columna original 'nombre_completo' de 'df_hc'
+                                                left_on=['nombre_completo'], # Columna de Constancias (Apellidos-Nombre)
+                                                right_on=['nombre_completo'], # Columna original de 'df_hc'
+                                                how='left',
+                                                suffixes=('_pass1', '_pass2'))
 
         # Ahora necesitamos consolidar los '#emp'
-        # Donde '#emp_pass1' es nulo, usamos '#emp_pass2'
+        # Donde '#emp_pass1' es nulo (es decir, no se encontró en el primer merge), usamos '#emp_pass2'
         df_constancias_segundo_merge['#emp'] = df_constancias_segundo_merge['#emp_pass1'].fillna(df_constancias_segundo_merge['#emp_pass2'])
         df_constancias_segundo_merge['estatus'] = df_constancias_segundo_merge['estatus_pass1'].fillna(df_constancias_segundo_merge['estatus_pass2'])
-        
+
         # Eliminar las columnas temporales de los pases
         df_constancias_segundo_merge = df_constancias_segundo_merge.drop(columns=['#emp_pass1', '#emp_pass2', 'estatus_pass1', 'estatus_pass2'])
 
-        # Los registros que se encuentren en el segundo pase tendrán un '#emp' aquí
-        # Necesitamos unir estos resultados con los que ya se encontraron en el primer pase
-        
         registros_coincidentes_2 = df_constancias_segundo_merge[df_constancias_segundo_merge['#emp'].notnull()]
         registros_sin_coincidencia_final = df_constancias_segundo_merge[df_constancias_segundo_merge['#emp'].isnull()]
 
@@ -1115,18 +915,17 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         df_constancias_merged = pd.concat([registros_coincidentes, registros_coincidentes_2, registros_sin_coincidencia_final], ignore_index=True)
     else:
         df_constancias_merged = registros_coincidentes # Si no hubo nada sin coincidencia en el primer pase, este es el resultado final
-            
+
     df_constancias_merged['#emp'] = df_constancias_merged['#emp'].fillna(0).astype(int)
-    df_constancias_merged['estatus'] = df_constancias_merged['estatus'].fillna('DESCONOCIDO').astype('string') 
+    df_constancias_merged['estatus'] = df_constancias_merged['estatus'].fillna('DESCONOCIDO').astype('string')
     column_emp = df_constancias_merged.pop('#emp')
     df_constancias_merged.insert(2, '#emp', column_emp)
     df_constancias_merged = df_constancias_merged.sort_values(['#emp', 'nombre_completo'])
 
-    for c in columns_text:
-        if c in df_constancias_merged:
+    for c in columns_text: # Utiliza las columnas de texto definidas previamente
+        if c in df_constancias_merged.columns: # Asegurarse de que la columna existe
             df_constancias_merged[c] = df_constancias_merged[c].astype('string')
 
-    # Aquí también puedes imprimir info para verificar el conteo de filas
     print("\nDataFrame de constancias después del doble merge con HC:\n")
     df_constancias_merged.info()
     print(f"Total de filas en df_constancias_merged después de doble merge: {len(df_constancias_merged)}")
@@ -1138,16 +937,14 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         if c in df_constancias_merged.columns:
             df_constancias_merged[c] = df_constancias_merged[c].astype('string')
 
-    # Asegurarse de que 'ruta_original' es siempre string y no NaN después de todos los merges
     if 'ruta_original' in df_constancias_merged.columns:
         df_constancias_merged['ruta_original'] = df_constancias_merged['ruta_original'].astype('string').fillna('')
     else:
-        # Esto debería ser un caso extremo, pero se añade por robustez
         df_constancias_merged['ruta_original'] = pd.Series([''] * len(df_constancias_merged), dtype='string')
 
     return df_constancias_merged
 
-def identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged: pd.DataFrame, folder_data_processed):
+def identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged: pd.DataFrame, config: Config): # Acepta el objeto Config
     """
     Identifica constancias sin numero de empleado(#emp) asociado y las exporta a archivos.
     """
@@ -1157,11 +954,10 @@ def identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged: p
         for index, row in constancias_sin_emp.iterrows():
             print(f"Archivo: {row['nombre_archivo']} \nNombre empleado: {row['nombre_completo']}\n")
 
-        # Outputs sin "#emp"
-        output_excel_path = os.path.join(folder_data_processed, 'datos_constancias_sin_emp.xlsx')
-        output_csv_path = os.path.join(folder_data_processed, 'datos_constancias_sin_emp.csv')
+        # Outputs sin "#emp" - Usando rutas de config
+        output_excel_path = config.outpath_xlsx_constancias_sin_emp
+        output_csv_path = config.outpath_csv_constancias_sin_emp
         try:
-            # Almacenar y exportar registros sin coincidencias '#emp'
             constancias_sin_emp.to_excel(output_excel_path, index=False)
             print(f"Registros sin '#emp' exportados a: {output_excel_path}")
         except Exception as e:
@@ -1174,20 +970,23 @@ def identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged: p
     else:
         print(f"\nTodas las constancias se asociaron correctamente\n")
 
-def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_base_activos: str, config: Config):
+def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, config: Config): # Solo recibe config
     """
     Organiza los archivos PDF copiándolos a carpetas individuales por número de empleado(#emp).
     Los empleados 'BAJA' van a una subcarpeta 'BAJAS'.
     Sobrescribe archivos existentes (no crea duplicados con sufijos).
     """
+    outpath_base_activos = config.onedrive_certs_active # Obtiene de config
+    outpath_base_bajas = config.onedrive_certs_bajas # Obtiene de config
+
     print(f"Iniciando organización de archivos. Destino base para ACTIVOS: {outpath_base_activos}")
-    print(f"Destino para BAJAS: {config.outpath_onedrive_constancias_bajas_pdfs}")
+    print(f"Destino para BAJAS: {outpath_base_bajas}")
 
     pdfs_organizados = 0
     pdfs_no_organizados_error_copia = 0
-    pdfs_sin_num_emp_count = 0 
-    pdfs_bajas_organizados = 0 
-    pdfs_activos_organizados = 0 
+    pdfs_sin_num_emp_count = 0
+    pdfs_bajas_organizados = 0
+    pdfs_activos_organizados = 0
 
     if df_constancias_merged.empty:
         print("No hay constancias para organizar (DataFrame vacío).")
@@ -1211,7 +1010,7 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_base_act
 
         # Determinar la carpeta de destino basada en el estatus
         if estatus_empleado == 'BAJA':
-            target_base_folder = config.outpath_onedrive_constancias_bajas_pdfs
+            target_base_folder = outpath_base_bajas
             # Si es BAJA, incrementa este contador, independientemente de si tiene #emp=0
             pdfs_bajas_organizados += 1
         else: # Incluye 'ALTA' y 'DESCONOCIDO'. Los '#emp == 0' también caen aquí, a menos que sean 'BAJA'.
@@ -1226,9 +1025,9 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, outpath_base_act
             pdfs_no_organizados_error_copia += 1
             continue
 
-        # Crear la carpeta de destino (ej. 'Certificados Entrenamiento Viva Handling/12345' o 'BAJAS/54321')    
+        # Crear la carpeta de destino (ej. 'Certificados Entrenamiento Viva Handling/12345' o 'BAJAS/54321')
         folder_emp = os.path.join(target_base_folder, num_emp)
-        os.makedirs(folder_emp, exist_ok=True) 
+        os.makedirs(folder_emp, exist_ok=True)
 
         # El nombre del archivo final es simplemente el 'nombre_archivo_nuevo'
         destino_pdf_path = os.path.join(folder_emp, base_new_file_name_with_ext)
@@ -1270,7 +1069,7 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
 
     # fecha_vigencia' (un año posterior a 'fecha normalizada')
     df_constancias_merged['fecha_vigencia'] = df_constancias_merged['fecha_asignada'] + pd.DateOffset(years=1)
-    
+
     # Obtener la fecha actual (solo la fecha, sin la hora, para una comparación justa))
     fecha_hoy = pd.to_datetime(datetime.now().date())
 
@@ -1299,7 +1098,7 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
 
         new_name = f"{curso_parte}_{fecha_parte}_{nombre_completo_parte}.pdf"
         return re.sub(r'_{2,}', '_', new_name).strip('_')  # Eliminar guiones bajos dobles y en los extremos
-    
+
     df_constancias_merged['nombre_archivo_nuevo'] = df_constancias_merged.apply(lambda row: generate_new_filename(row, vocales_acentos_map), axis=1)
 
     # Organizar columnas e incluir 'nombre_archivo_nuevo'
@@ -1316,11 +1115,13 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
 
     return df_final
 
-def exportar_resultados(df_final: pd.DataFrame, outpath_xlsx: str, outpath_csv: str, config: Config):
+def exportar_resultados(df_final: pd.DataFrame, config: Config): # Solo recibe config
     """
     Exporta el DataFrame final a archivos Excel y CSV. Si los archivos existen,
     concatena los nuevos datos, elimina duplicados y luego guarda el DataFrame combinado.
     """
+    outpath_xlsx = config.outpath_xlsx_constancias # Obtiene de config
+    outpath_csv = config.outpath_csv_constancias # Obtiene de config
 
     if df_final.empty:
         print("Data Frame vacío, no hay resultados para exportar.")
@@ -1330,7 +1131,7 @@ def exportar_resultados(df_final: pd.DataFrame, outpath_xlsx: str, outpath_csv: 
     deduplication_subset_cols = [
         'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'curso_homologado', 'fecha_asignada'
     ]
-    
+
     # Definir tipos de datos comunes para asegurar consistencia al leer archivos existentes.
     # Leer '#emp' como string para evitar problemas con valores mixtos o nulos durante la concatenación,
     # luego se convertirá a int al final.
@@ -1355,7 +1156,7 @@ def exportar_resultados(df_final: pd.DataFrame, outpath_xlsx: str, outpath_csv: 
     def _process_and_save(df_new_data: pd.DataFrame, file_path: str, is_excel: bool):
         df_combined = df_new_data.copy()
         file_type = "Excel" if is_excel else "CSV"
-        
+
         if os.path.exists(file_path):
             print(f"Cargando datos existentes de {file_type}: {file_path}")
             try:
@@ -1363,40 +1164,40 @@ def exportar_resultados(df_final: pd.DataFrame, outpath_xlsx: str, outpath_csv: 
                     df_existing = pd.read_excel(file_path, dtype=common_dtypes, parse_dates=date_cols)
                 else: # CSV
                     df_existing = pd.read_csv(file_path, dtype=common_dtypes, parse_dates=date_cols, encoding='utf-8')
-                
+
                 # Asegurar que las columnas de fecha en los datos existentes estén en formato datetime
                 for col in date_cols:
                     if col in df_existing.columns:
                         df_existing[col] = pd.to_datetime(df_existing[col], errors='coerce')
-                
+
                 # Convertir '#emp' a string en df_new_data para una concatenación consistente
                 if '#emp' in df_new_data.columns:
                     df_new_data['#emp'] = df_new_data['#emp'].astype('string')
-                
+
                 # Alinear columnas y concatenar
                 # Asegurar que todas las columnas de df_new_data estén presentes en df_existing,
                 # añadiendo las que falten con valores NaN para evitar errores de concatenación.
                 missing_cols_in_existing = set(df_new_data.columns) - set(df_existing.columns)
                 for col in missing_cols_in_existing:
                     df_existing[col] = pd.NA # O un valor predeterminado adecuado
-                
+
                 df_combined = pd.concat([df_existing, df_new_data], ignore_index=True)
-                
+
                 print(f"Combinando con {len(df_existing)} registros existentes.")
-                
+
                 # Eliminar duplicados del DataFrame combinado
                 initial_rows = len(df_combined)
                 df_combined_deduplicated = df_combined.drop_duplicates(subset=deduplication_subset_cols, keep='first')
                 rows_removed = initial_rows - len(df_combined_deduplicated)
                 print(f"Eliminados {rows_removed} registros duplicados de {file_type}.")
-                
+
                 df_combined = df_combined_deduplicated
-            
+
             except Exception as e:
                 print(f"ADVERTENCIA: Error al cargar y combinar el archivo {file_type} existente '{file_path}': {e}. Se exportarán solo los nuevos datos.")
                 # En caso de error, se procede solo con los nuevos datos
                 df_combined = df_new_data.copy()
-        
+
         # Asegurar que la columna '#emp' sea de tipo entero antes de la exportación final
         if '#emp' in df_combined.columns:
             # Primero, limpiar cualquier valor no numérico que pueda haber, reemplazándolos con NaN
@@ -1417,7 +1218,7 @@ def exportar_resultados(df_final: pd.DataFrame, outpath_xlsx: str, outpath_csv: 
             if is_excel:
                 writer = pd.ExcelWriter(file_path, engine='xlsxwriter')
                 df_combined.to_excel(writer, sheet_name='Historial Constancias', index=False)
-                
+
                 workbook = writer.book
                 worksheet = writer.sheets['Historial Constancias']
 
@@ -1451,7 +1252,7 @@ def exportar_resultados(df_final: pd.DataFrame, outpath_xlsx: str, outpath_csv: 
                 worksheet.autofilter(0, 0, 0, num_columns - 1)
                 writer.close()
                 print(f"\nListo, datos consolidados a {file_type}: {file_path}\n")
-                
+
                 # Intentar abrir el archivo (solo en sistemas Windows)
                 try:
                     os.startfile(file_path)
@@ -1470,32 +1271,14 @@ def exportar_resultados(df_final: pd.DataFrame, outpath_xlsx: str, outpath_csv: 
     # Exportación a CSV
     _process_and_save(df_final, outpath_csv, is_excel=False)
 
-def _cargar_set_registros_procesados(config: Config):
-    """Carga el log de archivos procesados en un conjunto para busquedas eficientes."""
-    processed_paths = set()
-    if os.path.exists(config.outpath_processed_files_log):
-        try:
-            with open(config.outpath_processed_files_log, 'r', encoding='utf-8') as f:
-                for line in f:
-                    path = line.strip()
-                    if path:
-                        processed_paths.add(path)
-            print(f"Cargadas {len(processed_paths)} rutas iniciales en memoria desde: '{config.outpath_processed_files_log}'")
-        except Exception as e:
-            print(f"Advertencia: No se pudo cargar el log de archivos procesados inicial desde '{config.outpath_processed_files_log}'. Error: {e}")
-    else:
-        print(f"No se encontró el log de archivos inicial en '{config.outpath_processed_files_log}'. Se inicia con un set vacío.")
-    config.processed_files_set_in_memory = processed_paths # Asegurar que el set en config se actualice
-
-def main():
+def run_pdf_etl(config: Config):
     """
-    Funcion principal que orquesta el proceso de ETL de las constancias.
+    Función principal que orquesta el proceso de ETL de las constancias.
     """
+    print("\n--- INICIANDO ETL DE CONSTANCIAS PDF ---")
+    _cargar_set_registros_procesados(config.outpath_processed_files_log) # Carga el log de archivos procesados en memoria
 
-    config = Config()
-    _cargar_set_registros_procesados(config) # <--- LLAMADA A LA FUNCIÓN GLOBAL AQUÍ
-
-    # Limpiar la carpeta temporal al inicio de la ejecución de etl_pdf_entrenamiento.py
+    # Limpiar la carpeta temporal al inicio de la ejecución
     if os.path.exists(config.temp_split_pdfs_folder):
         try:
             shutil.rmtree(config.temp_split_pdfs_folder)
@@ -1508,7 +1291,7 @@ def main():
     mover_carpetas_bajas(config)
 
     # 1. Cargar la lista de archivos (path, is_grouped_flag) desde el generador
-    list_of_source_files_with_flags = cargar_rutas_archivos_desde_archivo(config.file_lista_pdfs_nuevos_no_excluidos)
+    list_of_source_files_with_flags = cargar_rutas_archivos_desde_archivo(config.outpath_list_new_non_excluded_pdfs)
 
     all_extracted_data = [] # Recopila datos de todos los PDFs procesados (standalone o páginas divididas)
 
@@ -1547,7 +1330,7 @@ def main():
                 total_extracted_certificates += 1
             except Exception as e:
                 print(f"Error al extraer datos de '{os.path.basename(source_pdf_path)}': {e}")
-        
+
         total_files_processed_for_data_extraction += 1
 
     print(f"\nProcesamiento de archivos fuente completado. Total de archivos fuente procesados: {total_files_processed_for_data_extraction}.")
@@ -1555,7 +1338,7 @@ def main():
     print(f"  - Total de constancias individuales extraídas: {total_extracted_certificates}\n")
 
     # 3. Cargar datos de empleados (HC)
-    df_hc = cargar_data_hc(config.file_hc_table, config.vocales_acentos)
+    df_hc = cargar_data_hc(config.hc_table_path, config.vocales_acentos)
 
     # 4. Convertir datos extraídos a DataFrame, limpiar y fusionar con HC
     df_constancias_merged = procesar_y_mergear_constancias(all_extracted_data, df_hc, config.vocales_acentos)
@@ -1571,27 +1354,24 @@ def main():
         df_constancias_merged['original_source_path'] = '' # Fallback, no debería ocurrir si extraer_datos_constancia funciona bien
 
     # 5. Identificar y reportar constancias sin número de empleado
-    identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged, config.folder_data_processed)
+    identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged, config)
 
     # 6. Normalizar fechas y asignar estado de vigencia, y crear 'nombre_archivo_nuevo'
     df_final = normalizar_y_categorizar_fechas(df_constancias_merged, config.mapeo_meses, config.vocales_acentos)
 
     # 7. Organizar los archivos PDF en carpetas por empleado
-    organizar_archivos_pdf(df_final, config.outpath_onedrive_constancias_pdfs, config)
+    organizar_archivos_pdf(df_final, config)
 
     # 8. Exportar resultados
-    exportar_resultados(df_final, config.outpath_xlsx, config.outpath_csv, config)
+    exportar_resultados(df_final, config)
 
     # Guardar el set único de archivos procesados a disco
     _guardar_registro_procesado_a_disco(config)
 
-    # Limpiar la carpeta temporal al final de la ejecución de etl_pdf_entrenamiento.py
+    # Limpiar la carpeta temporal al final de la ejecución
     if os.path.exists(config.temp_split_pdfs_folder):
         try:
             shutil.rmtree(config.temp_split_pdfs_folder)
             print(f"INFO: Carpeta temporal de PDFs divididos '{config.temp_split_pdfs_folder}' eliminada.")
         except Exception as e:
             print(f"ADVERTENCIA: No se pudo eliminar la carpeta temporal '{config.temp_split_pdfs_folder}' al final. Error: {e}")
-
-if __name__ == "__main__":
-    main()

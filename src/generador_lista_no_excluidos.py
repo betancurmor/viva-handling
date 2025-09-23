@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
-from etl_pdf_entrenamiento import Config, fitz
+from config import Config # Importa la clase Config centralizada
+import fitz # Se importa fitz directamente
 
 # --- 1. FUNCIÓN CARGAR SET REGISTROS(log) PROCESADOS ---
 def _cargar_set_registros_procesados(log_file_path):
@@ -19,8 +20,9 @@ def _cargar_set_registros_procesados(log_file_path):
     else:
         print(f"No se encontro el log de archivos en '{log_file_path}'. Se asume que no hay archivos procesados previamente.")
     return processed_paths
+
 # --- 2. FUNCIÓN PRINCIPAL DE GENERACIÓN DE LISTA ---
-def generador_lista_archivos_no_excluidos(config: Config):
+def generador_lista_archivos_no_excluidos(config: Config): # La función ahora acepta el objeto Config
     """
     Recorre las carpetas fuente, aplicando reglas de exclusión para directorios y archivos PDF.
     Identifica los archivos PDF que no fueron excluidos, los divide si son agrupados,
@@ -36,23 +38,21 @@ def generador_lista_archivos_no_excluidos(config: Config):
     print("\n[SCRIPT NO DIARIO] Iniciando búsqueda de archivos NO excluidos...\n")
 
     # Cargar el log de archivos ya procesados una sola vez al inicio
-    set_archivos_procesados = _cargar_set_registros_procesados(config.ruta_registro_archivos_procesados)
+    set_archivos_procesados = _cargar_set_registros_procesados(config.outpath_processed_files_log) # Usa config.outpath_processed_files_log
 
-    for source_folder in config.carpetas_fuente:
+    for source_folder in config.source_folders_pdfs: # Usa config.source_folders_pdfs
         if not os.path.exists(source_folder):
             print(f"Advertencia: La carpeta fuente '{source_folder}' no existe. Saltando...")
             continue
 
-        # os.walk(topdown=True) es lo habitual y permite modificar 'dirs' in-place.
         for root, dirs, files in os.walk(source_folder, topdown=True):
             # --- Lógica de Exclusión de Carpetas ---
             dirs_to_visit = []
             for dir_name in dirs:
                 skip_dir = False
                 # Verificar prefijos de carpeta
-                for prefix in config.prefijos_excluidos: 
+                for prefix in config.excluded_prefixes: # Usa config.excluded_prefixes
                     if dir_name.lower().startswith(prefix.lower()):
-                        # print(f"Saltando prefijo '{prefix}' en carpeta: {os.path.join(root, dir_name)}") 
                         skip_dir = True
                         total_carpetas_saltadas += 1
                         break
@@ -60,9 +60,8 @@ def generador_lista_archivos_no_excluidos(config: Config):
                     continue
 
                 # Verificar sufijos de carpeta
-                for suffix in config.sufijos_excluidos:
+                for suffix in config.excluded_suffixes: # Usa config.excluded_suffixes
                     if dir_name.lower().endswith(suffix.lower()):
-                        # print(f"Saltando sufijo '{suffix}' en carpeta: {os.path.join(root, dir_name)}") 
                         skip_dir = True
                         total_carpetas_saltadas += 1
                         break
@@ -84,62 +83,61 @@ def generador_lista_archivos_no_excluidos(config: Config):
 
                 # --- Lógica de Exclusión de Archivos
                 # 1. Verificar prefijos
-                for prefix in config.prefijos_excluidos:
+                for prefix in config.excluded_prefixes: # Usa config.excluded_prefixes
                     if file_name.lower().startswith(prefix.lower()):
                         is_file_excluded = True
                         total_pdfs_excluidos_por_regla += 1
                         break
                 if is_file_excluded:
-                    continue # Archivo excluido, pasar al siguiente
+                    continue
 
                 # 2. Verificar sufijos
-                for suffix in config.sufijos_excluidos:
+                for suffix in config.excluded_suffixes: # Usa config.excluded_suffixes
                     if file_name.lower().endswith(suffix.lower()):
                         is_file_excluded = True
                         total_pdfs_excluidos_por_regla += 1
                         break
                 if is_file_excluded:
-                    continue # Archivo excluido, pasar al siguiente
+                    continue
 
                 # 3. Verificar años no vigentes en el nombre del archivo
-                for year in config.años_no_vigentes:
+                for year in config.non_vigentes_years_in_filename: # Usa config.non_vigentes_years_in_filename
                     if year.lower() in file_name.lower():
                         is_file_excluded = True
                         total_pdfs_excluidos_por_fecha += 1
                         break
                 if is_file_excluded:
-                    continue # Archivo excluido, pasar al siguiente
+                    continue
 
                 # 4. Lógica de Exclusión por Fecha de Modificación
                 try:
                     timestamp_modificacion = os.path.getmtime(full_pdf_path)
                     fecha_modificacion = datetime.fromtimestamp(timestamp_modificacion)
-                    if fecha_modificacion.year < config.año_minimo_modificacion:
+                    if fecha_modificacion.year < config.min_mod_year: # Usa config.min_mod_year
                         is_file_excluded = True
                         total_pdfs_excluidos_por_fecha += 1
                 except Exception as e:
                     # Si no se puede obtener la fecha, no se excluye el archivo por esta razón.
-                    pass # No se excluye el archivo por error de fecha, se procesa normalmente
+                    pass
 
                 if is_file_excluded:
-                    continue # Archivo excluido por fecha de modificación, pasar al siguiente
-                
+                    continue
+
                 if full_pdf_path in set_archivos_procesados:
                     total_pdfs_ya_procesados += 1
-                    continue # Archivo ya procesado, no es NUEVO, saltar
-                
+                    continue
+
                 # Si llega aqui, es un archivo NUEVO NO EXCLUIDO
                 is_grouped = False
 
                 try:
                     doc_check = fitz.open(full_pdf_path)
-                    # Heurística para detectar si es un PDF agrupado (ej., > 1 página y no marcado como excluido)
                     if doc_check.page_count > 1:
                         is_grouped = True
                     doc_check.close()
                 except Exception as e:
                     print(f"ADVERTENCIA: Error al abrir '{os.path.basename(full_pdf_path)}' para verificar paginas: {e}. Se tratará como archivo simple.")
-                
+
                 # Añadir la ruta original y la bandera de agrupado
                 new_non_excluded_file_paths_for_export.append(f"{full_pdf_path}|{'grouped' if is_grouped else 'standalone'}")
 
@@ -157,16 +155,12 @@ def generador_lista_archivos_no_excluidos(config: Config):
 
     # --- 4. GUARDAR LA LISTA EN ARCHIVO ---
     try:
-        with open(config.ruta_nuevo_archivo_no_excluidos, 'w', encoding='utf-8') as f:
+        # Usa config.outpath_list_new_non_excluded_pdfs
+        with open(config.outpath_list_new_non_excluded_pdfs, 'w', encoding='utf-8') as f:
             for path_with_flag in new_non_excluded_file_paths_for_export:
                 f.write(f"{path_with_flag}\n")
-        print(f"Lista de archivos NUEVOS NO excluidos guardada en: '{config.ruta_nuevo_archivo_no_excluidos}'")
+        print(f"Lista de archivos NUEVOS NO excluidos guardada en: '{config.outpath_list_new_non_excluded_pdfs}'")
     except Exception as e:
-        print(f"Error al guardar la lista de archivos NUEVOS NO excluidos en '{config.ruta_nuevo_archivo_no_excluidos}': {e}")
+        print(f"Error al guardar la lista de archivos NUEVOS NO excluidos en '{config.outpath_list_new_non_excluded_pdfs}': {e}")
 
     return [item.split('|')[0] for item in new_non_excluded_file_paths_for_export]
-# --- 5. EJECUCIÓN PRINCIPAL ---
-if __name__ == '__main__':
-    current_config = Config()
-    archivos_nuevos_no_excluidos_list = generador_lista_archivos_no_excluidos(current_config)
-    print(f"\nGeneración de lista de archivos NUEVOS NO excluidos completada. Se encontraron {len(archivos_nuevos_no_excluidos_list)} archivos NUEVOS NO excluidos.")
