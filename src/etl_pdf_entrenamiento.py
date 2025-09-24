@@ -829,8 +829,12 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('MONTREAL SALAS HUGO HUMBERTO', 'MONRREAL SALAS HUGO HUMBERTO', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('ABELDAÑO LEAL REGINA SAORI', 'ALBELDAÑO LEAL REGINA SAORI', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('IBARRA TREVIÑO BRAYAN ARTURO', 'IBARRA TREVIO BRAYAN ARTURO', regex=False)
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('IBARRA TREVINO BRAYAN ARTURO', 'IBARRA TREVIO BRAYAN ARTURO', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('MICHELE ALFARO PALOMEQUE', 'MICHELLE ALFARO PALOMEQUE', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('KEVEIN ENRIQUE MAAS ANAYA', 'KEVIN ENRIQUE MAAS ANAYA', regex=False)
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('FLOR ALEXANDRA CRUZ PEREZ', 'FLOR ALEXSANDRA CRUZ PEREZ', regex=False)
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('JESUS YAIR ORTA SAUCEDA', 'JESUS YAHIR ORTA SAUCEDA', regex=False)
+
 
     # Modificacion de fecha manual por error en constancia.
     df_constancias.loc[
@@ -852,8 +856,7 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
         (df_constancias['nombre_archivo'] == 'OP 2025 MONTREAL SALAS HUGO HUMBERTO.pdf') & (df_constancias['fecha'] == 'MONTREAL SALAS Hugo Humberto Febrero-2025.'),
         'fecha'
         ] = '25 FEBRERO-2025.'
-
-
+    
     # --- DOBLE MERGE PARA MEJORAR COINCIDENCIAS DE NOMBRES
 
     # Primer merge con el formato "NOMBRE APELLIDO(P) APELLIDO(M)" en 'df_constancias' vs "NOMBRE APELLIDO(P) APELLIDO(M)" en 'df_hc'
@@ -1059,13 +1062,13 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
         return df_constancias_merged
 
     # parsear 'fecha'
-    df_constancias_merged['fecha_asignada'] = df_constancias_merged['fecha'].apply(
+    df_constancias_merged['fecha_constancia'] = df_constancias_merged['fecha'].apply(
         lambda x: parse_fecha_inicio(x, mapeo_meses_map))
     # fecha sin la hora, normalizarla
-    df_constancias_merged['fecha_asignada'] = pd.to_datetime(df_constancias_merged['fecha_asignada'], errors='coerce').dt.normalize()
+    df_constancias_merged['fecha_constancia'] = pd.to_datetime(df_constancias_merged['fecha_constancia'], errors='coerce').dt.normalize()
 
     # fecha_vigencia' (un año posterior a 'fecha normalizada')
-    df_constancias_merged['fecha_vigencia'] = df_constancias_merged['fecha_asignada'] + pd.DateOffset(years=1)
+    df_constancias_merged['fecha_vigencia'] = df_constancias_merged['fecha_constancia'] + pd.DateOffset(years=1)
 
     # Obtener la fecha actual (solo la fecha, sin la hora, para una comparación justa))
     fecha_hoy = pd.to_datetime(datetime.now().date())
@@ -1088,8 +1091,8 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
         nombre_completo_parte = limpiar_partes_archivo(row['nombre_completo'], vocales_acentos_map)
 
         fecha_parte = ''
-        if pd.notna(row['fecha_asignada']):
-            fecha_parte = row['fecha_asignada'].strftime('%d-%m-%Y')
+        if pd.notna(row['fecha_constancia']):
+            fecha_parte = row['fecha_constancia'].strftime('%d-%m-%Y')
 
         # Combinar las partes. Eliminar posibles guiones bajas dobles o al inicio/fin.
 
@@ -1099,12 +1102,12 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
     df_constancias_merged['nombre_archivo_nuevo'] = df_constancias_merged.apply(lambda row: generate_new_filename(row, vocales_acentos_map), axis=1)
 
     # Organizar columnas e incluir 'nombre_archivo_nuevo'
-    df_final = df_constancias_merged[['nombre_archivo', 'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'estatus', 'curso_homologado','curso', 'instructor', 'grupo', 'fecha', 'fecha_asignada', 'fecha_vigencia', 'estatus_vigencia', 'ruta_original', 'original_source_path']]
+    df_final = df_constancias_merged[['nombre_archivo', 'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'estatus', 'curso_homologado','curso', 'instructor', 'grupo', 'fecha', 'fecha_constancia', 'fecha_vigencia', 'estatus_vigencia', 'ruta_original', 'original_source_path']]
 
     # Eliminar duplicados basándose solo en las columnas especificadas
     columns_to_consider_for_duplicates = [
     'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'estatus',
-    'curso_homologado', 'curso', 'instructor', 'grupo', 'fecha_asignada']
+    'curso_homologado', 'curso', 'instructor', 'grupo', 'fecha_constancia']
     df_final = df_final.drop_duplicates(subset=columns_to_consider_for_duplicates)
 
     df_final = df_final.drop_duplicates()
@@ -1126,7 +1129,7 @@ def exportar_resultados(df_final: pd.DataFrame, config: Config): # Solo recibe c
 
     # Columnas a considerar para la deduplicación (identificador único de una constancia)
     deduplication_subset_cols = [
-        'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'curso_homologado', 'fecha_asignada'
+        'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'curso_homologado', 'fecha_constancia'
     ]
 
     # Definir tipos de datos comunes para asegurar consistencia al leer archivos existentes.
@@ -1147,7 +1150,7 @@ def exportar_resultados(df_final: pd.DataFrame, config: Config): # Solo recibe c
         'ruta_original': 'string',
         'original_source_path': 'string'
     }
-    date_cols = ['fecha_asignada', 'fecha_vigencia']
+    date_cols = ['fecha_constancia', 'fecha_vigencia']
 
     # Función auxiliar para procesar y guardar datos en Excel o CSV
     def _process_and_save(df_new_data: pd.DataFrame, file_path: str, is_excel: bool):
@@ -1204,7 +1207,7 @@ def exportar_resultados(df_final: pd.DataFrame, config: Config): # Solo recibe c
 
         # Ordenar el DataFrame final para una salida consistente
         try:
-            sort_cols = [col for col in ['#emp', 'fecha_asignada', 'nombre_completo'] if col in df_combined.columns]
+            sort_cols = [col for col in ['#emp', 'fecha_constancia', 'nombre_completo'] if col in df_combined.columns]
             if sort_cols:
                 df_combined = df_combined.sort_values(by=sort_cols, ascending=[True, False, True], ignore_index=True)
         except Exception as sort_e:

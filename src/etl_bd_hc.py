@@ -167,14 +167,15 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
     # --- Nexos
     # ---- Base 'Entrenamiento'
     df_entrenamiento = cargar_transformar_excel(config.hc_etl_files['FILE_ENTRENAMIENTO'], config, sheet_name=config.hc_etl_sheets_names['ENTRENAMIENTO'], header=8).copy()
+    df_entrenamiento = df_entrenamiento[['#emp', 'curso', 'fecha_constancia', 'fecha_vigencia', 'fecha_programada', 'estatus_vigencia']].dropna(how='all')
     text_cols = ['#emp', 'curso', 'estatus_vigencia']
     for col in text_cols:
         if col in df_entrenamiento.columns:
             df_entrenamiento[col] = limpiar_columna_texto(df_entrenamiento[col], caracteres_a_eliminar= ' ')
-    # df_entrenamiento['curso'] = df_entrenamiento['curso'].str.replace('SAT(Op)', 'SAT', regex=False)
-    df_entrenamiento = df_entrenamiento.rename(columns={'fecha_vigencia': 'l.d'})
-    df_entrenamiento = df_entrenamiento.rename(columns={'fecha_programada': 'e.d'})
-    date_cols = ['fecha_curso', 'l.d', 'e.d']
+    df_entrenamiento['curso'] = df_entrenamiento['curso'].str.replace('SAT(Op)', 'SAT', regex=False)
+    # df_entrenamiento = df_entrenamiento.rename(columns={'fecha_vigencia': 'l.d'})
+    # df_entrenamiento = df_entrenamiento.rename(columns={'fecha_programada': 'e.d'})
+    date_cols = ['fecha_constancia', 'fecha_vigencia', 'fecha_programada']
     for col in date_cols:
         if col in df_entrenamiento.columns:
             df_entrenamiento[col] = limpiar_columna_fecha(df_entrenamiento[col])
@@ -184,8 +185,38 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
         df_entrenamiento['#emp'] = limpiar_columna_id(df_entrenamiento['#emp'])
     else:
         df_entrenamiento['#emp'] = 0
-    df_entrenamiento = df_entrenamiento[['#emp', 'curso', 'fecha_curso', 'l.d', 'estatus_vigencia', 'e.d']]
+    df_entrenamiento = df_entrenamiento[['#emp', 'curso', 'fecha_constancia', 'fecha_vigencia', 'estatus_vigencia', 'fecha_programada']]
     df_entrenamiento = df_entrenamiento.drop_duplicates().sort_values(['#emp', 'curso'])
+
+    # --- INICIO DE LA NUEVA LÓGICA PARA IDENTIFICAR CURSOS FALTANTES ---
+    print("\n[ETL HC] Identificando y añadiendo cursos faltantes para cada empleado...")
+
+    unique_emps_from_hc = df_hc['#emp'].unique()
+    # Definir los cursos obligatorios (asegúrate de que estos nombres coincidan con los cursos limpios)
+    required_courses = ['SAT', 'AVSEC', 'SMS']
+
+    all_expected_combinations = pd.DataFrame(
+        [(emp, course) for emp in unique_emps_from_hc for course in required_courses],
+        columns=['#emp', 'curso']
+    )
+
+    # Realizar un left merge para añadir los cursos existentes y dejar NaN/NaT para los faltantes.
+    #    'all_expected_combinations' es el DataFrame izquierdo, manteniendo todas sus filas.
+    df_entrenamiento_expanded = pd.merge(
+        all_expected_combinations,
+        df_entrenamiento,
+        on=['#emp', 'curso'],
+        how='left'
+    )
+
+    # Rellenar 'estatus_vigencia' con 'Faltante' para los cursos que no se encontraron
+    df_entrenamiento_expanded['estatus_vigencia'] = df_entrenamiento_expanded['estatus_vigencia'].fillna('FALTANTE')
+
+    # Reemplazar el df_entrenamiento original con el expandido para el resto del ETL
+    df_entrenamiento = df_entrenamiento_expanded
+    df_entrenamiento = df_entrenamiento.sort_values(['#emp', 'curso']).reset_index(drop=True)
+
+    print(f"[ETL HC] Cursos esperados + existentes generados. Total de registros: {len(df_entrenamiento)}")
 
     # -- Cursos Entrenamiento
     # ---- Tabla 'cursos_table'
@@ -193,6 +224,9 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
     df_cursos = df_cursos.drop_duplicates().dropna().sort_values(['curso']).reset_index(drop=True)
     df_cursos['id_curso'] = df_cursos.index+1
     df_cursos = df_cursos[['id_curso', 'curso']]
+    df_cursos = df_cursos[df_cursos['curso'] != 'nan']
+    df_cursos = df_cursos[df_cursos['curso'] != '']
+    df_cursos = df_cursos[df_cursos['curso'] != ' ']
 
     # --- Estatus Vigencia, entrenamiento (temp_table)
     df_estatus_vigencia = df_entrenamiento[['estatus_vigencia']]
@@ -298,15 +332,19 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
     df_asistencia['fecha_programada'] = limpiar_columna_fecha(df_asistencia['fecha_programada'])
     df_asistencia = df_asistencia.drop_duplicates().dropna(how='all').sort_values(by='#emp', ascending=False)
     df_asistencia = df_asistencia[df_asistencia['#emp'] != 0]
+    df_asistencia.loc[
+        (df_asistencia['asistencia'] == 'FALTA')
+    ] = 'FALTO'
 
     # Merge: 'df_entrenamiento', 'df_asistencia'
     df_entrenamiento_asistencia = pd.merge(
         df_entrenamiento,
         df_asistencia[['#emp', 'curso', 'fecha_programada', 'asistencia', 'motivo']],
-        left_on=['#emp', 'curso', 'e.d'],
-        right_on=['#emp', 'curso', 'fecha_programada']
+        left_on=['#emp', 'curso', 'fecha_programada'],
+        right_on=['#emp', 'curso', 'fecha_programada'],
+        how='left'
     )
-    df_entrenamiento_asistencia = df_entrenamiento_asistencia[['#emp', 'curso', 'fecha_curso', 'l.d', 'estatus_vigencia', 'e.d', 'asistencia', 'motivo']]
+    df_entrenamiento_asistencia = df_entrenamiento_asistencia[['#emp', 'curso', 'fecha_constancia', 'fecha_vigencia', 'estatus_vigencia', 'fecha_programada', 'asistencia', 'motivo']]
     df_entrenamiento_asistencia = df_entrenamiento_asistencia.sort_values(by='#emp', ascending=False)
 
     # Merge: 'df_entrenamiento_asistencia', 'Cursos'
@@ -314,7 +352,8 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
         df_entrenamiento_asistencia,
         df_cursos[['curso', 'id_curso']],
         left_on=['curso'],
-        right_on=['curso']
+        right_on=['curso'],
+        how='left'
     )
 
     # Merge: 'df_entrenamiento_asistencia_cursos', 'Estatus vigencia'
@@ -324,7 +363,7 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
         left_on=['estatus_vigencia'],
         right_on=['estatus_vigencia']
     )
-    df_hechos = df_entrenamiento_asistencia_cursos_status[['#emp', 'id_curso', 'id_estatus_vigencia', 'l.d', 'e.d', 'fecha_curso', 'asistencia', 'motivo']]
+    df_hechos = df_entrenamiento_asistencia_cursos_status[['#emp', 'id_curso', 'id_estatus_vigencia', 'fecha_vigencia', 'fecha_programada', 'fecha_constancia', 'asistencia', 'motivo']]
     df_hechos = df_hechos.sort_values(by=['#emp', 'id_curso']).reset_index(drop=True)
 
     # --- Dashboard: 'Ausentismo'
