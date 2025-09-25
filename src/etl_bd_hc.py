@@ -103,6 +103,14 @@ def run_hc_etl(config: Config): # La función ahora acepta el objeto Config
     # Crear y limpiar la columna '#emp'
     df_hc['#emp'] = limpiar_columna_id(df_hc['id'], caracteres_a_eliminar=['H', 'P'])
 
+    # Nombre Mayusculas
+    cols_nombres = ['paterno','materno', 'nombre']
+    for col in cols_nombres:
+        if col in df_hc.columns:
+            df_hc[col] = df_hc[col].str.upper()
+        else:
+            df_hc[col] = ''
+
     # Crear y limpiar la columna 'nombre_completo'
     df_hc['nombre_completo'] = df_hc['paterno'] + ' ' + df_hc['materno'] + ' ' + df_hc['nombre']
     df_hc['nombre_completo'] = limpiar_columna_texto(df_hc['nombre_completo'])

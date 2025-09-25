@@ -834,7 +834,10 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('KEVEIN ENRIQUE MAAS ANAYA', 'KEVIN ENRIQUE MAAS ANAYA', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('FLOR ALEXANDRA CRUZ PEREZ', 'FLOR ALEXSANDRA CRUZ PEREZ', regex=False)
     df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('JESUS YAIR ORTA SAUCEDA', 'JESUS YAHIR ORTA SAUCEDA', regex=False)
-
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('XIMENA MONSERRAT MORALES CONTRERAS', 'XIMENA MONSERRATH MORALES CONTRERAS', regex=False)
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace(r'\bMORALES CONTRERAS XIMENA MONSERRAT\b', 'MORALES CONTRERAS XIMENA MONSERRATH', regex=True) # Coincidencia Exacta
+    df_constancias['nombre_completo'] = df_constancias['nombre_completo'].str.replace('JORGE ANGEL DAVID HERNADEZ AVILA', 'JORGE ANGEL DAVID HERNANDEZ AVILA', regex=False)
+    
 
     # Modificacion de fecha manual por error en constancia.
     df_constancias.loc[
@@ -944,7 +947,7 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
 
     return df_constancias_merged
 
-def identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged: pd.DataFrame, config: Config): # Acepta el objeto Config
+def identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged: pd.DataFrame, config: Config):
     """
     Identifica constancias sin numero de empleado(#emp) asociado y las exporta a archivos.
     """
@@ -1052,66 +1055,188 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, config: Config):
     print(f"  - PDFs sin número de empleado (en carpeta '0' de Activos): {pdfs_sin_num_emp_count}")
     print(f"Total de archivos que fallaron al copiar (errores FileNotFoundError/Otros): {pdfs_no_organizados_error_copia}\n")
 
-def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_meses_map, vocales_acentos_map: dict):
+def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_meses_map: dict, vocales_acentos_map: dict, df_hc: pd.DataFrame):
     """
     Normaliza las fechas de las constancias, calcula la fecha de vigencia y asigna un estatus(Vigente/Vencido).
-    Tambien crea la columna 'nombre_archivo_nuevo' con el formato "CURSO_DD-MM-YYY_NOMBRE COMPLETO" y la columna 'curso_homologado'.
+    Tambien crea la columna 'nombre_archivo_nuevo' con el formato "CURSO_DD-MM-YYYY_NOMBRE COMPLETO" y la columna 'curso_homologado'.
+    Además, asegura que cada empleado tenga un registro para los cursos 'SAT', 'AVSEC', 'SMS', rellenando los faltantes.
     """
-    if df_constancias_merged.empty:
-        print("DataFrame vacio, saltando normalizacion de fechas.")
-        return df_constancias_merged
+    # 1. Procesar el DataFrame de constancias_merged (que contiene los datos reales de los PDFs)
+    df_temp = df_constancias_merged.copy()
 
-    # parsear 'fecha'
-    df_constancias_merged['fecha_constancia'] = df_constancias_merged['fecha'].apply(
+    # Manejo de df_temp vacío
+    if df_temp.empty:
+        print("DataFrame de constancias extraídas está vacío. Se creará un esqueleto completo.")
+        df_temp = pd.DataFrame(columns=[
+            'nombre_archivo', 'ruta_original', 'original_source_path',
+            'nombre_completo', '#emp', 'estatus', 'fecha', 'curso', 'instructor', 'grupo',
+            'fecha_constancia', 'fecha_vigencia', 'estatus_vigencia', 'curso_homologado', 'nombre_archivo_nuevo'
+        ])
+        df_temp['#emp'] = df_temp['#emp'].astype(int)
+
+    # Parsear 'fecha' (fecha de la constancia)
+    df_temp['fecha_constancia'] = df_temp['fecha'].apply(
         lambda x: parse_fecha_inicio(x, mapeo_meses_map))
-    # fecha sin la hora, normalizarla
-    df_constancias_merged['fecha_constancia'] = pd.to_datetime(df_constancias_merged['fecha_constancia'], errors='coerce').dt.normalize()
+    df_temp['fecha_constancia'] = pd.to_datetime(df_temp['fecha_constancia'], errors='coerce').dt.normalize()
 
-    # fecha_vigencia' (un año posterior a 'fecha normalizada')
-    df_constancias_merged['fecha_vigencia'] = df_constancias_merged['fecha_constancia'] + pd.DateOffset(years=1)
+    # Calcular 'fecha_vigencia' (un año posterior a 'fecha_constancia')
+    df_temp['fecha_vigencia'] = df_temp['fecha_constancia'] + pd.DateOffset(years=1)
 
-    # Obtener la fecha actual (solo la fecha, sin la hora, para una comparación justa))
+    # Obtener la fecha actual (solo la fecha, sin la hora)
     fecha_hoy = pd.to_datetime(datetime.now().date())
 
-    # condicional 'Vigente' , 'Vencido'
-    df_constancias_merged['estatus_vigencia'] = np.where(
-        df_constancias_merged['fecha_vigencia'] < fecha_hoy,
+    # Determinar 'estatus_vigencia' para las constancias reales
+    df_temp['estatus_vigencia'] = np.where(
+        df_temp['fecha_vigencia'] < fecha_hoy,
         'Vencido',
         'Vigente'
     )
 
-    # Crear columna 'curso-homologado'
-    df_constancias_merged['curso_homologado'] = df_constancias_merged['curso'].apply(homologar_curso)
+    # Crear columna 'curso_homologado' (con las categorías específicas como SAT(Rampa))
+    df_temp['curso_homologado'] = df_temp['curso'].apply(homologar_curso)
+    df_temp['curso_homologado'] = df_temp['curso_homologado'].fillna('OTRO')
 
-    # Crear columna 'nombre_archivo_nuevo'
-
+    # Crear columna 'nombre_archivo_nuevo' para las constancias existentes
     def generate_new_filename(row, vocales_acentos_map):
-        # Limpiar y formatear cada parte para el nombre del archivo
-        curso_parte = limpiar_partes_archivo(row['curso_homologado'], vocales_acentos_map) # Usar el curso homologado
+        if pd.isna(row['fecha_constancia']) or pd.isna(row['curso_homologado']) or pd.isna(row['nombre_completo']):
+            return pd.NA
+        curso_parte = limpiar_partes_archivo(row['curso_homologado'], vocales_acentos_map)
         nombre_completo_parte = limpiar_partes_archivo(row['nombre_completo'], vocales_acentos_map)
-
-        fecha_parte = ''
-        if pd.notna(row['fecha_constancia']):
-            fecha_parte = row['fecha_constancia'].strftime('%d-%m-%Y')
-
-        # Combinar las partes. Eliminar posibles guiones bajas dobles o al inicio/fin.
-
+        fecha_parte = row['fecha_constancia'].strftime('%d-%m-%Y')
         new_name = f"{curso_parte}_{fecha_parte}_{nombre_completo_parte}.pdf"
-        return re.sub(r'_{2,}', '_', new_name).strip('_')  # Eliminar guiones bajos dobles y en los extremos
+        return re.sub(r'_{2,}', '_', new_name).strip('_')
 
-    df_constancias_merged['nombre_archivo_nuevo'] = df_constancias_merged.apply(lambda row: generate_new_filename(row, vocales_acentos_map), axis=1)
+    df_temp['nombre_archivo_nuevo'] = df_temp.apply(lambda row: generate_new_filename(row, vocales_acentos_map), axis=1)
 
-    # Organizar columnas e incluir 'nombre_archivo_nuevo'
-    df_final = df_constancias_merged[['nombre_archivo', 'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'estatus', 'curso_homologado','curso', 'instructor', 'grupo', 'fecha', 'fecha_constancia', 'fecha_vigencia', 'estatus_vigencia', 'ruta_original', 'original_source_path']]
+    # Asegurar que #emp sea int para df_temp antes del merge
+    df_temp['#emp'] = pd.to_numeric(df_temp['#emp'], errors='coerce').fillna(0).astype(int)
 
-    # Eliminar duplicados basándose solo en las columnas especificadas
-    columns_to_consider_for_duplicates = [
-    'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'estatus',
-    'curso_homologado', 'curso', 'instructor', 'grupo', 'fecha_constancia']
-    df_final = df_final.drop_duplicates(subset=columns_to_consider_for_duplicates)
 
-    df_final = df_final.drop_duplicates()
+    # ASEGURAR TODOS LOS CURSOS POR EMPLEADO ---
+    print("\n[ETL PDF - Fechas] Consolidando datos con cursos esperados (SAT, AVSEC, SMS)...")
+
+    # Filtrar Bajas de df_hc
+    df_hc = df_hc[df_hc['estatus'].str.upper() != 'BAJA']
+
+    # Obtener todos los empleados únicos de la tabla HC
+    unique_emps = df_hc['#emp'].unique()
+    required_courses_list_general = ['SAT', 'AVSEC', 'SMS'] # Cursos obligatorios genéricos
+
+    # Crear el esqueleto de todas las combinaciones esperadas de empleado y curso genérico
+    all_expected_combinations = pd.DataFrame(
+        [(emp, course) for emp in unique_emps for course in required_courses_list_general],
+        columns=['#emp', 'curso_generico_requerido'] # Usar un nombre distinto y claro
+    )
+    all_expected_combinations['#emp'] = all_expected_combinations['#emp'].astype(int) # Asegurar el tipo
+
+
+    # Crear una versión genérica de 'curso_homologado' en df_temp para el merge ***
+    # Esto mapea todos los SAT(Rampa), SAT(Operador) a un solo 'SAT' para la clave de merge.
+    df_temp['curso_homologado_para_merge'] = df_temp['curso_homologado'].copy()
+    df_temp.loc[df_temp['curso_homologado_para_merge'].str.startswith('SAT(', na=False), 'curso_homologado_para_merge'] = 'SAT'
+
+
+    # Realizar un left merge del esqueleto con el df_temp (constancias reales procesadas).
+    # Se usa 'curso_generico_requerido' del esqueleto y 'curso_homologado_para_merge' de df_temp.
+    df_final_expanded = pd.merge(
+        all_expected_combinations,
+        df_temp,
+        left_on=['#emp', 'curso_generico_requerido'],
+        right_on=['#emp', 'curso_homologado_para_merge'], # Usar la columna genérica para el merge
+        how='left',
+        suffixes=('_expected', '_actual') # Sufijos para identificar columnas del lado derecho
+    )
+
+    # Eliminar la columna auxiliar usada para el merge del lado derecho
+    df_final_expanded = df_final_expanded.drop(columns=['curso_homologado_para_merge'], errors='ignore')
+
+
+    # Rellenar y consolidar columnas después del merge:
+    # Priorizar la información real de la constancia ('_actual') si existe.
+    # Si no, usar la información del esqueleto o de df_hc.
+
+    # 1. Consolidar 'nombre_completo' y 'estatus' (desde df_hc si no hay constancia)
+    # Este merge adicional rellenará los campos para los placeholders.
+    df_hc_info = df_hc[['#emp', 'nombre_completo', 'estatus']].rename(columns={'nombre_completo': 'nombre_completo_hc', 'estatus': 'estatus_hc'})
+
+    # ASEGURAR QUE '#emp' EN df_hc_info SEA int64
+    df_hc_info['#emp'] = pd.to_numeric(df_hc_info['#emp'], errors='coerce').fillna(0).astype(int)
+    
+    df_final_expanded = pd.merge(
+        df_final_expanded,
+        df_hc_info,
+        on='#emp',
+        how='left'
+    )
+    
+    # Usar el nombre_completo de la constancia si existe, si no, el de HC
+    df_final_expanded['nombre_completo'] = df_final_expanded['nombre_completo'].fillna(df_final_expanded['nombre_completo_hc'])
+    df_final_expanded['estatus'] = df_final_expanded['estatus'].fillna(df_final_expanded['estatus_hc'])
+
+
+    # 2. Consolidar la información del curso
+    # 'curso_homologado' debe ser el específico si existe (e.g., SAT(Rampa)), si no, el genérico (SAT)
+    df_final_expanded['curso_homologado'] = df_final_expanded['curso_homologado'].fillna(df_final_expanded['curso_generico_requerido'])
+    # 'curso' (el nombre raw del PDF) debe ser el raw si existe, si no, el genérico
+    df_final_expanded['curso'] = df_final_expanded['curso'].fillna(df_final_expanded['curso_generico_requerido'])
+
+
+    # 3. Consolidar Fechas y Estatus de Vigencia
+    df_final_expanded['fecha'] = df_final_expanded['fecha'].fillna(pd.NaT)
+    df_final_expanded['fecha_constancia'] = df_final_expanded['fecha_constancia'].fillna(pd.NaT)
+    df_final_expanded['fecha_vigencia'] = df_final_expanded['fecha_vigencia'].fillna(pd.NaT)
+    df_final_expanded['estatus_vigencia'] = df_final_expanded['estatus_vigencia'].fillna('Faltante')
+
+
+    # 4. Consolidar otras columnas (instructor, grupo, nombre de archivo, rutas)
+    df_final_expanded['instructor'] = df_final_expanded['instructor'].fillna(pd.NA)
+    df_final_expanded['grupo'] = df_final_expanded['grupo'].fillna(pd.NA)
+    df_final_expanded['nombre_archivo'] = df_final_expanded['nombre_archivo'].fillna(pd.NA)
+    df_final_expanded['nombre_archivo_nuevo'] = df_final_expanded['nombre_archivo_nuevo'].fillna(pd.NA)
+    df_final_expanded['ruta_original'] = df_final_expanded['ruta_original'].fillna('') # Rellenar con '' para evitar errores de path
+    df_final_expanded['original_source_path'] = df_final_expanded['original_source_path'].fillna('') # Rellenar con ''
+
+    # Eliminar todas las columnas auxiliares (_hc) y la de curso_generico_requerido
+    # La columna 'nombre_completo_actual' y similares ya no existen para ser eliminadas.
+    cols_to_drop = [col for col in df_final_expanded.columns if col.endswith('_hc') or col == 'curso_generico_requerido']
+    df_final_expanded = df_final_expanded.drop(columns=cols_to_drop, errors='ignore')
+
+
+    # Definir el orden final de las columnas
+    final_columns_order = [
+        'nombre_archivo', 'nombre_archivo_nuevo', '#emp', 'nombre_completo', 'estatus',
+        'curso_homologado', 'curso', 'instructor', 'grupo', 'fecha',
+        'fecha_constancia', 'fecha_vigencia', 'estatus_vigencia',
+        'ruta_original', 'original_source_path'
+    ]
+
+    # Asegurarse de que todas las columnas en final_columns_order existan, creándolas si no con pd.NA
+    for col in final_columns_order:
+        if col not in df_final_expanded.columns:
+            df_final_expanded[col] = pd.NA
+
+    df_final_expanded = df_final_expanded[final_columns_order]
+
+    # --- Deduplicación y priorización ---
+    # Para la deduplicación, necesitamos una clave que trate todas las variantes de SAT como un solo 'SAT'.
+    # Usaremos una columna auxiliar para esto.
+    df_final_expanded['temp_dedup_key_course'] = df_final_expanded['curso_homologado'].copy()
+    df_final_expanded.loc[df_final_expanded['temp_dedup_key_course'].str.startswith('SAT(', na=False), 'temp_dedup_key_course'] = 'SAT'
+
+
+    df_final_expanded = df_final_expanded.sort_values(
+        by=['#emp', 'temp_dedup_key_course', 'fecha_constancia'], # Usar la clave genérica para la deduplicación y la fecha para priorizar
+        ascending=[True, True, False], # Priorizar fecha más reciente (no NaT) para el curso genérico
+        na_position='last' # Asegura que los registros sin fecha (placeholders) vayan al final
+    )
+
+    df_final = df_final_expanded.drop_duplicates(subset=['#emp', 'temp_dedup_key_course'], keep='first')
+    df_final = df_final.drop(columns=['temp_dedup_key_course'], errors='ignore') # Eliminar la columna auxiliar de deduplicación
+
+
     df_final = df_final.reset_index(drop=True)
+
+    print(f"[ETL PDF - Fechas] DataFrame final con cursos esperados: {len(df_final)} registros.")
 
     return df_final
 
@@ -1357,8 +1482,11 @@ def run_pdf_etl(config: Config):
     identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged, config)
 
     # 6. Normalizar fechas y asignar estado de vigencia, y crear 'nombre_archivo_nuevo'
-    df_final = normalizar_y_categorizar_fechas(df_constancias_merged, config.mapeo_meses, config.vocales_acentos)
-
+    df_final = normalizar_y_categorizar_fechas(df_constancias_merged, config.mapeo_meses, config.vocales_acentos, df_hc)
+    if df_final.empty:
+        print("El DataFrame final está vacío incluso después de añadir cursos esperados. Terminando el proceso.")
+        return
+    
     # 7. Organizar los archivos PDF en carpetas por empleado
     organizar_archivos_pdf(df_final, config)
 
