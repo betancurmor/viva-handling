@@ -82,7 +82,6 @@ class Config:
         # Carpeta compartida de OneDrive para certificados (donde se organizan los PDFs finales)
         self.sharepoint_certs_base = os.path.join(self.sharepoint_training_folder, 'Constancias Entrenamiento - Certificados')
 
-        # self.onedrive_certs_active = os.path.join(self.onedrive_certs_base, '2.Constancias_actual')
         self.sharepoint_certs_active = os.path.join(self.sharepoint_certs_base, '2.Constancias_actual')
         self.sharepoint_certs_bajas = os.path.join(self.sharepoint_certs_active, '1. BAJAS') # Subcarpeta dentro de '2.Constancias_actual'
 
