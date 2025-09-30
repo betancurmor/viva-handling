@@ -119,33 +119,33 @@ El proyecto se encuentra en una **fase avanzada de proceso y refinamiento**. Act
 *   **Interfaz Gráfica de Usuario (GUI):** La futura implementación de una GUI permitirá a usuarios no técnicos interactuar con el pipeline de forma intuitiva, facilitando la configuración de rutas y la ejecución de los procesos con solo unos clics. Esto mejorará significativamente la usabilidad y accesibilidad del sistema.
 
 ## 📁 Estructura del Proyecto
-.
-├── data/
-│ ├── processed/
-│ │ ├── dashboard_tables/ # Tablas limpias para dashboards (CSV)
-│ │ │ ├── fact_table.csv
-│ │ │ ├── hc_table.csv
-│ │ │ ├── hc_bajas_table.csv
-│ │ │ ├── puestos_table.csv
-│ │ │ ├── cursos_table.csv
-│ │ │ ├── asistencia_table.csv
-│ │ │ ├── ausentismo_table.csv
-│ │ │ └── cobertura_table.csv
-│ │ ├── temp_split_pdfs/ # PDFs temporales generados al dividir agrupados (limpiada en cada ejecución)
-│ │ ├── datos_constancias.xlsx # Historial consolidado de constancias
-│ │ ├── datos_constancias.csv # Historial consolidado de constancias
-│ │ ├── datos_constancias_sin_emp.xlsx # Constancias sin #emp asignado (para revisión)
-│ │ ├── datos_constancias_sin_emp.csv # Constancias sin #emp asignado (para revisión)
-│ │ └── registro_archivos_procesados.txt # Log de archivos fuente procesados
-│ └── raw/ # Fuentes de datos originales (no generada por el script)
-├── src/
-│ ├── config.py # Clase de configuración centralizada
-│ ├── etl_bd_hc.py # Script para la preparación de tablas de HC para dashboards
-│ ├── etl_pdf_entrenamiento.py # Script principal ETL de constancias PDF
-│ ├── generador_lista_no_excluidos.py # Script para identificar y filtrar nuevos PDFs
-│ └── init.py # Archivo de inicialización del paquete src
-├── main.py # Orquestador principal del pipeline ETL
-└── README.md
+*
+*├── data/
+*│ ├── processed/
+*│ │ ├── dashboard_tables/ # Tablas limpias para dashboards (CSV)
+*│ │ │ ├── fact_table.csv
+*│ │ │ ├── hc_table.csv
+*│ │ │ ├── hc_bajas_table.csv
+*│ │ │ ├── puestos_table.csv
+*│ │ │ ├── cursos_table.csv
+*│ │ │ ├── asistencia_table.csv
+*│ │ │ ├── ausentismo_table.csv
+*│ │ │ └── cobertura_table.csv
+*│ │ ├── temp_split_pdfs/ # PDFs temporales generados al dividir agrupados (limpiada en cada ejecución)
+*│ │ ├── datos_constancias.xlsx # Historial consolidado de constancias
+*│ │ ├── datos_constancias.csv # Historial consolidado de constancias
+*│ │ ├── datos_constancias_sin_emp.xlsx # Constancias sin #emp asignado (para revisión)
+*│ │ ├── datos_constancias_sin_emp.csv # Constancias sin #emp asignado (para revisión)
+*│ │ └── registro_archivos_procesados.txt # Log de archivos fuente procesados
+*│ └── raw/ # Fuentes de datos originales (no generada por el script)
+*├── src/
+*│ ├── config.py # Clase de configuración centralizada
+*│ ├── etl_bd_hc.py # Script para la preparación de tablas de HC para dashboards
+*│ ├── etl_pdf_entrenamiento.py # Script principal ETL de constancias PDF
+*│ ├── generador_lista_no_excluidos.py # Script para identificar y filtrar nuevos PDFs
+*│ └── init.py # Archivo de inicialización del paquete src
+*├── main.py # Orquestador principal del pipeline ETL
+*└── README.md
 
 ## 🤝 Contribución
 
