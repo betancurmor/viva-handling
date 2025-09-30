@@ -76,8 +76,8 @@ def mover_carpetas_bajas(config: Config): # Acepta el objeto Config
         print("No se encontraron empleados con estatus 'BAJA' en 'hc_table.csv'. Saltando movimiento de carpetas.")
         return
 
-    source_root_active = config.onedrive_certs_active # Usa config.onedrive_certs_active
-    destination_root_bajas = config.onedrive_certs_bajas # Usa config.onedrive_certs_bajas
+    source_root_active = config.sharepoint_certs_active # Usa config.sharepoint_certs_active
+    destination_root_bajas = config.sharepoint_certs_bajas # Usa config.sharepoint_certs_bajas
 
     os.makedirs(destination_root_bajas, exist_ok=True)
 
@@ -945,6 +945,8 @@ def procesar_y_mergear_constancias(datos_conjunto_excluidos: list, df_hc: pd.Dat
     else:
         df_constancias_merged['ruta_original'] = pd.Series([''] * len(df_constancias_merged), dtype='string')
 
+    df_constancias_merged = df_constancias_merged.sort_values(by=['fecha', 'nombre_completo']).reset_index(drop=True)
+
     return df_constancias_merged
 
 def identificar_y_reportar_constancias_sin_coincidencia(df_constancias_merged: pd.DataFrame, config: Config):
@@ -979,8 +981,8 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, config: Config):
     Los empleados 'BAJA' van a una subcarpeta 'BAJAS'.
     Sobrescribe archivos existentes (no crea duplicados con sufijos).
     """
-    outpath_base_activos = config.onedrive_certs_active # Obtiene de config
-    outpath_base_bajas = config.onedrive_certs_bajas # Obtiene de config
+    outpath_base_activos = config.sharepoint_certs_active # Obtiene de config
+    outpath_base_bajas = config.sharepoint_certs_bajas # Obtiene de config
 
     print(f"Iniciando organización de archivos. Destino base para ACTIVOS: {outpath_base_activos}")
     print(f"Destino para BAJAS: {outpath_base_bajas}")
@@ -1029,8 +1031,12 @@ def organizar_archivos_pdf(df_constancias_merged: pd.DataFrame, config: Config):
             continue
 
         # Crear la carpeta de destino (ej. 'Certificados Entrenamiento Viva Handling/12345' o 'BAJAS/54321')
-        folder_emp = os.path.join(target_base_folder, num_emp)
+        # folder_emp = os.path.join(target_base_folder, num_emp)
+        # os.makedirs(folder_emp, exist_ok=True)
+        # Si num_emp es '0', usa la carpeta '0', sino usa el valor de num_emp
+        folder_emp = os.path.join(target_base_folder, '0' if num_emp == '0' else num_emp)
         os.makedirs(folder_emp, exist_ok=True)
+
 
         # El nombre del archivo final es simplemente el 'nombre_archivo_nuevo'
         destino_pdf_path = os.path.join(folder_emp, base_new_file_name_with_ext)
@@ -1116,7 +1122,7 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
     print("\n[ETL PDF - Fechas] Consolidando datos con cursos esperados (SAT, AVSEC, SMS)...")
 
     # Filtrar Bajas de df_hc
-    df_hc = df_hc[df_hc['estatus'].str.upper() != 'BAJA']
+    # df_hc = df_hc[df_hc['estatus'].str.upper() != 'BAJA']
 
     # Obtener todos los empleados únicos de la tabla HC
     unique_emps = df_hc['#emp'].unique()
@@ -1135,6 +1141,9 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
     df_temp['curso_homologado_para_merge'] = df_temp['curso_homologado'].copy()
     df_temp.loc[df_temp['curso_homologado_para_merge'].str.startswith('SAT(', na=False), 'curso_homologado_para_merge'] = 'SAT'
 
+    df_emp_ceros = df_temp[df_temp['#emp'] == 0]
+    if not df_emp_ceros.empty: 
+        print(f"  - Nota: Hay {len(df_emp_ceros)} registros en constancias con '#emp' = 0 que no se podrán mapear a cursos obligatorios.")
 
     # Realizar un left merge del esqueleto con el df_temp (constancias reales procesadas).
     # Se usa 'curso_generico_requerido' del esqueleto y 'curso_homologado_para_merge' de df_temp.
@@ -1149,7 +1158,6 @@ def normalizar_y_categorizar_fechas(df_constancias_merged: pd.DataFrame, mapeo_m
 
     # Eliminar la columna auxiliar usada para el merge del lado derecho
     df_final_expanded = df_final_expanded.drop(columns=['curso_homologado_para_merge'], errors='ignore')
-
 
     # Rellenar y consolidar columnas después del merge:
     # Priorizar la información real de la constancia ('_actual') si existe.

@@ -10,10 +10,14 @@ class Config:
         # Rutas base del usuario y OneDrive
         self.user_home = os.path.expanduser("~")
         self.onedrive_org_name = 'OneDrive - Vivaaerobus'
-        self.onedrive_shared_base_path = os.path.join(self.user_home, self.onedrive_org_name, 'archivos_compartidos')
+        self.onedrive_shared_base_path = os.path.join(self.user_home, self.onedrive_org_name)
 
         # Ruta raíz del proyecto (ajusta si tu proyecto 'Viva-handling' está en otro lugar)
-        self.project_root = os.path.join(self.user_home, 'Projects', 'Viva-handling')
+        self.sharepoint_home_folder = os.path.join(self.onedrive_shared_base_path, 'VH - Planning - Documentos') # Carpeta Base en SharePoint
+        self.sharepoint_performance_folder = os.path.join(self.sharepoint_home_folder, 'Performance Analyst') # Carpeta de Performance Analyst
+        self.sharepoint_training_folder = os.path.join(self.sharepoint_home_folder, 'Planning, Training and Optimization Analyst') # Carpeta de Planning, Training and Optimization Analyst
+        self.sharepoint_coordinator_folder = os.path.join(self.sharepoint_home_folder, 'Planning & Performance Coordinator') # Carpeta de Planning & Performance Coordinator
+        self.project_root = os.path.join(self.sharepoint_performance_folder, 'Project_Python_OCR') # Carpeta raíz del proyecto
 
         # --- Carpetas de Datos Generales (relativas a project_root) ---
         self.data_folder = os.path.join(self.project_root, 'data')
@@ -25,14 +29,14 @@ class Config:
         # --- Configuraciones específicas de etl_bd_hc.py ---
         self.hc_etl_files = {
             "FILE_MAESTRO_HC": os.path.join(self.onedrive_shared_base_path, 'GESTION HUMANA', 'BASE DE DATOS.xlsx'),
-            "FILE_DATOS_ADICIONALES_HC": os.path.join(self.onedrive_shared_base_path, '12. Compartida', '1. Bryan', 'Archivos_Entrenamiento', 'BASE DE DATOS_ADICIONAL.xlsx'),
-            "FILE_PUESTOS": os.path.join(self.onedrive_shared_base_path, '12. Compartida', '1. Bryan', 'Tabla_Homologacion.xlsx'),
-            "FILE_ENTRENAMIENTO": os.path.join(self.onedrive_shared_base_path, '12. Compartida', '1. Bryan', 'Registro_Entrenamiento.xlsm'),
-            "FILE_COBERTURA": os.path.join(self.onedrive_shared_base_path, '12. Compartida', '1. Bryan', 'Cobertura.xlsx'),
+            "FILE_DATOS_ADICIONALES_HC": os.path.join(self.sharepoint_training_folder, 'BASE DE DATOS_ADICIONAL.xlsx'),
+            "FILE_PUESTOS": os.path.join(self.sharepoint_coordinator_folder, 'Tabla_Homologacion.xlsx'),
+            "FILE_ENTRENAMIENTO": os.path.join(self.sharepoint_training_folder, 'Registro_Entrenamiento.xlsm'),
+            "FILE_COBERTURA": os.path.join(self.sharepoint_coordinator_folder, 'Cobertura.xlsx'),
         }
         self.hc_etl_folders = {
-            "FOLDER_RELOJ_CHECADOR": os.path.join(self.onedrive_shared_base_path, '12. Compartida', '1. Bryan', 'Faltas'),
-            "FOLDER_ROSTER": os.path.join(self.onedrive_shared_base_path, '12. Compartida', '1. Bryan', 'Roster'),
+            "FOLDER_RELOJ_CHECADOR": os.path.join(self.sharepoint_coordinator_folder, 'Faltas'),
+            "FOLDER_ROSTER": os.path.join(self.sharepoint_training_folder, 'Roster'),
         }
         self.hc_etl_sheets_names = {
             "MAESTRO_HC": 'BASE DE DATOS',
@@ -76,9 +80,11 @@ class Config:
         self.processed_files_set_in_memory = set()
         
         # Carpeta compartida de OneDrive para certificados (donde se organizan los PDFs finales)
-        self.onedrive_certs_base = os.path.join(self.onedrive_shared_base_path, 'Certificados Entrenamiento Viva Handling - Certficados')
-        self.onedrive_certs_active = os.path.join(self.onedrive_certs_base, '2.Constancias_actual')
-        self.onedrive_certs_bajas = os.path.join(self.onedrive_certs_active, '1. BAJAS') # Subcarpeta dentro de '2.Constancias_actual'
+        self.sharepoint_certs_base = os.path.join(self.sharepoint_training_folder, 'Constancias Entrenamiento - Certificados')
+
+        # self.onedrive_certs_active = os.path.join(self.onedrive_certs_base, '2.Constancias_actual')
+        self.sharepoint_certs_active = os.path.join(self.sharepoint_certs_base, '2.Constancias_actual')
+        self.sharepoint_certs_bajas = os.path.join(self.sharepoint_certs_active, '1. BAJAS') # Subcarpeta dentro de '2.Constancias_actual'
 
         # Patrones de texto para extracción de PDF (de etl_pdf_entrenamiento.py)
         self.nombres_archivos_sat = ['instructor sat', '2025-T', 'apoyo en tierra', 'sat.']
@@ -103,9 +109,9 @@ class Config:
         # --- Configuraciones específicas de generador_lista_no_excluidos.py ---
         # Estas son las carpetas fuente donde se encuentran los PDFs a procesar.
         self.source_folders_pdfs = [
-            os.path.join(self.onedrive_certs_base, '1.Constancias_agrupadas'),
+            os.path.join(self.sharepoint_certs_base, '1.Constancias_agrupadas'),
             os.path.join(self.onedrive_shared_base_path, 'Capacitación SAT Pronomina MTY - 2025'),
-            os.path.join(self.onedrive_certs_base, '3.Constancias_anterior'),
+            os.path.join(self.sharepoint_certs_base, '3.Constancias_anterior'),
             os.path.join(self.onedrive_shared_base_path, 'Aeropuertos - AUTOPRESTACION MTY')
         ]
         self.min_mod_year = 2024
@@ -132,5 +138,5 @@ class Config:
         os.makedirs(os.path.dirname(self.outpath_list_new_non_excluded_pdfs), exist_ok=True)
 
         # Crear carpetas de salida específicas de OneDrive si no existen
-        os.makedirs(self.onedrive_certs_active, exist_ok=True)
-        os.makedirs(self.onedrive_certs_bajas, exist_ok=True)
+        os.makedirs(self.sharepoint_certs_active, exist_ok=True)
+        os.makedirs(self.sharepoint_certs_bajas, exist_ok=True)
